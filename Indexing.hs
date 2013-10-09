@@ -198,11 +198,12 @@ contexts keywords text caseSensitive = concatMap (\k -> case findIndex (\suffix 
 main = do
 	args <- getArgs
 	let keywords = filter ((>2) . length) args
-	if head args == "-i" then
+	if not (null args) && head args == "-i" then
 		if length args == 1 then
 			fullIndex
-		else
-			indexDirectory (args !! 1) (args !! 1)
+		else do
+			dir <- canonicalizePath (args !! 1)
+			indexDirectory dir dir
 	else if null keywords then do
 		putStrLn "Index: no keywords"
 		putStrLn "Use -c for case sensitive search"
