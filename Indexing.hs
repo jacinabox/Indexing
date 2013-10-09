@@ -37,7 +37,7 @@ chunks n ls = if length ls < n then
 
 toUpperCase s = map toUpper s
 
-indexAddition text = nub $ concatMap (\chnk -> [chnk, reverse chnk]) $ chunks 5 ("  " ++ toUpperCase text ++ "  ")
+indexAddition text = nub $ concatMap (\chnk -> [chnk, reverse chnk]) $ chunks 5 ("  " ++ toUpperCase text ++ "   ")
 
 isPrintable c = ord c == 9 || ord c == 10 || ord c == 13 || ord c >= 32
 
