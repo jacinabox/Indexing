@@ -1,0 +1,219 @@
+{-# LANGUAGE ScopedTypeVariables, CPP #-}
+
+module Main (main) where
+
+import Data.List hiding (union, insert)
+import Control.Monad
+import System.Directory
+import Data.Char
+import System.IO
+import Data.Array.Unboxed (UArray)
+import Data.Array.IArray hiding (index)
+import Data.Function
+import System.Environment
+import Data.IORef
+import System.Process
+import Control.Parallel.Strategies
+import Data.List.Extras.Argmax
+import System.FilePath
+import Control.Exception
+import Data.Maybe
+import Prelude hiding (catch)
+import FileCons
+import Replace
+import Split
+import System.IO.Unsafe
+
+import Unpacks
+
+chunks0 n ls
+	| length ls < n	= []
+	| otherwise	= take n ls : chunks0 n (drop n ls)
+
+chunks n ls = if length ls < n then
+		[ls]
+	else
+		chunks0 n ls
+
+toUpperCase s = map toUpper s
+
+indexAddition text = nub $ concatMap (\chnk -> [chnk, reverse chnk]) $ chunks 5 ("  " ++ toUpperCase text ++ "  ")
+
+isPrintable c = ord c == 9 || ord c == 10 || ord c == 13 || ord c >= 32
+
+indexFileName = do
+	dir <- getAppUserDataDirectory "Index"
+	createDirectoryIfMissing False dir
+	return (dir ++ pathDelimiter : "Index.dat")
+
+flatten hdl [] = newInt hdl 0
+flatten hdl (x:_) = x
+
+-- We maintain a distinction between "names" and "logical names," in order
+-- to handle files that have been unpacked from archives. The logical names
+-- are the names the user will see, and are a concatenation of paths
+-- separated by @s. The other names are the places where you find the
+-- temporary files that resulted from unpacking.
+
+-- Breaks the file up into 5-letter chunks and associates these chunks
+-- with the given file.
+index name logicalName = catch (do
+	putStrLn name
+	fl <- openBinaryFile name ReadMode
+	contents <- hGetContents fl
+	let s = if all isPrintable contents then contents else ""
+	idxNm <- indexFileName
+	idx <- openHandle idxNm ReadWriteMode
+	let nm = encodeString idx logicalName
+	mapM_
+		(\add -> do
+			(ls, existing) <- lookIdxImpl add add idx
+			when (name `notElem` ls) $
+				insert cmpr2 (encodeString idx add) (newCons nm existing) idx)
+		(indexAddition s)
+	closeHandle idx
+	hClose fl)
+	(\(er :: IOError) -> putStrLn (":::" ++ show er))
+
+details1 name logicalName code = maybe
+	code
+	(\f -> do
+		unpacked <- f name
+		indexDirectory unpacked (logicalName ++ "@"))
+	(lookup (takeExtension name) unpacks)
+
+details2 name code = do
+	userdata <- getAppUserDataDirectory "Index"
+	tmp <- getTemporaryDirectory
+	unless
+		(name == userdata || name == tmp || name == "/dev" || name == "/sys")
+		code
+
+-- What this does is decide, for each thing in a directory,
+-- whether it is a file or a directory. If it is a file, we call the
+-- /index/ function to index it. If it is a directory, we recurse in order to
+-- index the directory. (There is a special case when a file is an
+-- unpackable archive, in which case we do the unpacking, then start
+-- indexing the resulting /temporary directory/.)
+indexDirectory dir logicalDir = catch (do
+	contents <- getDirectoryContents dir
+	mapM_ (\nm -> let name = dir ++ nm in
+		let logicalName = logicalDir ++ nm in
+		unless (nm == "." || nm == "..") $ do
+		b <- doesFileExist name
+		if b then
+				details1 name logicalName {-Primary control flow:-}(index name logicalName)
+			else
+				details2 name {-Primary control flow:-}(indexDirectory (name ++ [pathDelimiter]) (logicalName ++ [pathDelimiter])))
+		contents)
+	(\(er :: IOError) -> putStrLn (":::" ++ show er))
+
+#ifdef WIN32
+fullIndex = do
+	letters <- readProcess "driveletters.exe" [] ""
+	mapM_ (\dir -> indexDirectory dir dir) (lines letters)
+#else
+fullIndex = indexDirectory "/" "/"
+#endif
+
+{-incrementalIndex = do
+	hdl <- openFile "/tmp/Toindex.txt" ReadMode
+	contents <- hGetContents hdl
+	mapM_ (\nm -> index nm nm) (lines contents)
+	hClose hdl
+	hdl <- openFile "/tmp/Toindex.txt" WriteMode
+	hClose hdl-}
+
+intersects ls = foldl1 intersect ls
+
+-- The process of doing a keyword search:
+--   lookKeywords deals with all the keywords the user has entered,
+--   look deals with a single keyword, breaking it up into 5-letter pieces.
+--   lookIdx searches for a single 5-letter piece in the index.
+
+-- Returns a pair, with the first element being all the files associated with
+-- the given key range, and the second being the raw Cons associated with
+-- k, for adding onto.
+lookIdxImpl k k2 idx = do
+	f <- first idx
+	ls <- dlookup cmpr k k2 f
+	converted <- liftM concat $ mapM (\x -> toList x >>= mapM decodeString) ls
+	return (converted, flatten idx ls)
+
+-- A pure version of lookIdxImpl. Its use is justified by the fact that we
+-- are doing queries only, so the contents of the index are unlikely to change.
+lookIdx k k2 idx = fst $ unsafePerformIO (lookIdxImpl k k2 idx)
+
+look keyword idx = do
+		window <- map (\n -> argmax length [drop n keyword, reverse (take n keyword)]) [0..4]
+		intersects [ lookIdx chunk (chunk ++ replicate (5 - length chunk) '~') idx | chunk <- chunks 5 window ]
+	`mplus` if length keyword == 3 then
+			[ res | chr <- [' '..'~'], res <- lookIdx (chr : keyword) (chr : keyword ++ "~") idx ]
+		else
+			[]
+
+extractText name = do
+	let paths = split '@' name
+	finalPath <- foldM
+		(\path logicalPath -> liftM (++logicalPath) (fromJust (lookup (takeExtension path) unpacks) path))
+		(head paths)
+		(tail paths)
+	readFile finalPath
+
+-- First it acquires a list, /possibilities/, which is a superset of the correct
+-- results. Then it winnows this list down by searching for the keywords
+-- in the texts of the files.
+lookKeywords keywords caseSensitive = do
+	idxNm <- indexFileName
+	let longKeywords = filter ((>=5) . length) keywords
+	idx <- openHandle idxNm ReadMode
+	let possibilities = nub $ intersects $ map ((`look` idx) . toUpperCase)
+		$ if null longKeywords then keywords else longKeywords
+	texts <- mapM (\nm -> liftM (\str -> (nm, str)) (extractText nm))
+		possibilities
+	closeHandle idx
+	let caseFunction = if caseSensitive then id else toUpperCase
+	let keywords2 = map caseFunction keywords
+	return $ filter
+		(\(nm, str) -> all (\k -> any (isInfixOf k . caseFunction) [takeFileName nm, str]) keywords2)
+		texts
+
+lineNumber idx num (line:lines) = if idx < length line then
+		num
+	else
+		lineNumber (idx - length line - 1) (num + 1) lines
+
+pad n s = replicate (n - length s) ' ' ++ s
+
+contexts keywords text caseSensitive = concatMap (\k -> case findIndex (\suffix -> isPrefixOf (caseFunction k) suffix) (tails (caseFunction text)) of
+		Just i -> let context = take 67 (drop (i - 33) text) in
+			if all isPrintable context then
+				pad 5 (show $ lineNumber i 1 $ lines text) ++ " ..." ++ replace [("\n", " "), ("\r", " ")] context ++ "...\n"
+			else
+				""
+		Nothing -> "")
+	keywords where
+	caseFunction = if caseSensitive then id else toUpperCase
+
+main = do
+	args <- getArgs
+	let keywords = filter ((>2) . length) args
+	if head args == "-i" then
+		if length args == 1 then
+			fullIndex
+		else
+			indexDirectory (args !! 1) (args !! 1)
+	else if null keywords then do
+		putStrLn "Index: no keywords"
+		putStrLn "Use -c for case sensitive search"
+		putStrLn "Use -i to do a full index"
+		putStrLn "Use -i dir to index a directory"
+	else do
+		let caseSensitive = "-c" `elem` args
+		results <- lookKeywords keywords caseSensitive
+		mapM_ (\(nm, text) -> do
+				putStrLn ""
+				putStrLn ("  " ++ nm)
+				putStr (contexts keywords text caseSensitive))
+			results
+		when (null results) (putStrLn "Index: no results found")
