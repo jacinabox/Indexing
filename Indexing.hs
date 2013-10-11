@@ -61,7 +61,7 @@ index name logicalName = catch (do
 	putStrLn name
 	fl <- openBinaryFile name ReadMode
 	contents <- hGetContents fl
-	let s = if all isPrintable contents then contents else ""
+	let s = takeFileName name ++ if all isPrintable contents then contents else ""
 	idxNm <- indexFileName
 	idx <- openHandle idxNm ReadWriteMode
 	let nm = encodeString idx logicalName
