@@ -46,7 +46,7 @@ unpack cmd switches name = do
 	catch (removeFile path2) (\(_ :: IOError) -> return ())
 	return path
 
--- A table of conversion functions, that take their file formats
+-- A table of conversion functions, that take their filenames
 -- as strings and unpack them into temporary directories.
 unpacks = [(".htm", convertFile convertHtml),
 	(".html", convertFile convertHtml),
