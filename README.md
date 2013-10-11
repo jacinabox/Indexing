@@ -16,11 +16,11 @@ An overview of the components of this project:
 
 To build the Haskell part of the application, use
 
-ghc Indexing.hs -o Index
+ghc Indexing.hs -o Index -O2
 
 on Linux and
 
-ghc Indexing.hs -o Index.exe -DWIN32
+ghc Indexing.hs -o Index.exe -O2 -DWIN32
 
 on Windows.
 
