@@ -56,4 +56,5 @@ unpacks = [(".htm", convertFile convertHtml),
 	(".xlsm", convertFile convertHtml),
 	(".gz", unpack "gzip" ["-d"]),
 	(".bz2", unpack "bunzip2" []),
-	(".tar", unpack "tar" ["-xf"])]
+	(".tar", unpack "tar" ["-xf"]),
+	(".zip", unpack "unzip" [])]
