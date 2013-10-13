@@ -22,6 +22,7 @@ import Prelude hiding (catch)
 import FileCons
 import Replace
 import Split
+import System.IO.Error
 import System.IO.Unsafe
 
 import Unpacks
@@ -49,14 +50,14 @@ indexFileName = do
 flatten hdl [] = newInt hdl 0
 flatten hdl (x:_) = x
 
-hGetString 0 _ = return []
-hGetString n fl = do
-	b <- hIsEOF fl
-	if b then
-		return []
-	else 
-		liftM2 (:) (hGetChar fl) (hGetString (n - 1) fl)
-{-# INLINE hGetString #-}
+addChunkToIndex logicalName nm idx add = do
+	(ls, existing) <- lookIdxImpl add add idx
+	when (logicalName `notElem` ls) $
+		insert cmpr2 (encodeString idx add) (newCons nm existing) idx
+	(ls, existing) <- lookIdxImpl (reverse add) (reverse add) idx
+	when (logicalName `notElem` ls) $
+		insert cmpr2 (encodeString idx (reverse add)) (newCons nm existing) idx
+{-# INLINE addChunkToIndex #-}
 
 -- We maintain a distinction between "names" and "logical names," in order
 -- to handle files that have been unpacked from archives. The logical names
@@ -64,36 +65,51 @@ hGetString n fl = do
 -- separated by @s. The other names are the places where you find the
 -- temporary files that resulted from unpacking.
 
--- Breaks the file up into 5-letter chunks and associates these chunks
--- with the given file.
 index name logicalName = catch (do
 	putStrLn name
 	idxNm <- indexFileName
 	idx <- openHandle idxNm ReadWriteMode
 	let nm = encodeString idx logicalName
-	let addChunk add = do
-		(ls, existing) <- lookIdxImpl add add idx
-		when (name `notElem` ls) $
-			insert cmpr2 (encodeString idx add) (newCons nm existing) idx
-		(ls, existing) <- lookIdxImpl (reverse add) (reverse add) idx
-		when (name `notElem` ls) $
-			insert cmpr2 (encodeString idx (reverse add)) (newCons nm existing) idx
+
+	-- Adding the file's name to the index.
 	mapM_
-		addChunk
+		(addChunkToIndex logicalName nm idx)
 		(indexAddition (takeFileName name))
+
+	-- Checks to see if the file is binary. If so, we skip it.
 	fl <- openBinaryFile name ReadMode
-	let loop = do
-		s <- liftM toUpperCase (hGetString 5 fl)
-		if not (all isPrintable s) then
-			return ()
-		else if length s < 5 then
-			addChunk (s ++ replicate (5 - length s) ' ')
-		else do
-			addChunk s
-			loop
-	loop
-	closeHandle idx
-	hClose fl)
+	let
+		loop 0 = return True
+		loop n = do
+			b <- hIsEOF fl
+			if b then
+				return True
+			else do
+				c <- hGetChar fl
+				if isPrintable c then
+					loop (n - 1)
+				else
+					return False
+	printable <- loop 500
+	hClose fl
+
+	when printable $ do
+		-- Breaks the file up into 5-letter chunks and associates these chunks
+		-- with the given file.
+		fl <- openBinaryFile name ReadMode
+		sz <- hFileSize fl
+		catch (sequence_ $ replicate (fromInteger sz `div` 5) $ do
+			c1 <- hGetChar fl
+			c2 <- hGetChar fl
+			c3 <- hGetChar fl
+			c4 <- hGetChar fl
+			c5 <- hGetChar fl
+			addChunkToIndex logicalName nm idx [toUpper c1, toUpper c2, toUpper c3, toUpper c4, toUpper c5])
+			(\ex -> if isEOFError ex then return () else throwIO ex)
+		remaining <- hGetContents fl
+		addChunkToIndex logicalName nm idx (toUpperCase remaining ++ replicate (5 - length remaining) ' ')
+		hClose fl
+	closeHandle idx)
 	(\(er :: IOError) -> putStrLn (":::" ++ show er))
 
 details1 name logicalName code = maybe
@@ -137,14 +153,6 @@ fullIndex = do
 fullIndex = indexDirectory "/" "/"
 #endif
 
-{-incrementalIndex = do
-	hdl <- openFile "/tmp/Toindex.txt" ReadMode
-	contents <- hGetContents hdl
-	mapM_ (\nm -> index nm nm) (lines contents)
-	hClose hdl
-	hdl <- openFile "/tmp/Toindex.txt" WriteMode
-	hClose hdl-}
-
 intersects ls = foldl1 intersect ls
 
 -- The process of doing a keyword search:
@@ -160,6 +168,7 @@ lookIdxImpl k k2 idx = do
 	ls <- dlookup cmpr k k2 f
 	converted <- liftM concat $ mapM (\x -> toList x >>= mapM decodeString) ls
 	return (converted, flatten idx ls)
+{-# INLINE lookIdxImpl #-}
 
 -- A pure version of lookIdxImpl. Its use is justified by the fact that we
 -- are doing queries only, so the contents of the index are unlikely to change.
