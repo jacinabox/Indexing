@@ -98,14 +98,13 @@ index name logicalName = catch (do
 		-- with the given file.
 		fl <- openBinaryFile name ReadMode
 		sz <- hFileSize fl
-		catch (sequence_ $ replicate (fromInteger sz `div` 5) $ do
+		sequence_ $ replicate (fromInteger sz `div` 5) $ do
 			c1 <- hGetChar fl
 			c2 <- hGetChar fl
 			c3 <- hGetChar fl
 			c4 <- hGetChar fl
 			c5 <- hGetChar fl
-			addChunkToIndex logicalName nm idx [toUpper c1, toUpper c2, toUpper c3, toUpper c4, toUpper c5])
-			(\ex -> if isEOFError ex then return () else throwIO ex)
+			addChunkToIndex logicalName nm idx (toUpperCase [c1, c2, c3, c4, c5])
 		remaining <- hGetContents fl
 		addChunkToIndex logicalName nm idx (toUpperCase remaining ++ replicate (5 - length remaining) ' ')
 		hClose fl
