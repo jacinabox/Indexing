@@ -1,6 +1,6 @@
-{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE CPP, ScopedTypeVariables #-}
 
-module FileCons (Cons, openHandle, closeHandle, newCons, newInt, isPair, first, second, setFirst, setSecond, int, list, toList, nth, shw, cmpr, cmpr2, encodeString, decodeString, dlookup, insert, deleteFindMin, deleteFindMax, delete) where
+module FileCons (Cons, openHandle, closeHandle, newCons, newInt, isPair, first, second, setFirst, setSecond, int, list, toList, nth, shw, cmpr, cmpr2, encodeString, decodeString, dlookup, insert, deleteFindMin, deleteFindMax, delete, depth, size) where
 
 import System.IO.Unsafe
 import Control.Monad
@@ -9,7 +9,6 @@ import Data.Char
 import Foreign.ForeignPtr
 import Foreign.Ptr
 import Foreign.Storable
-import Control.Concurrent.MVar
 import System.IO
 import Control.Exception
 import System.Directory
@@ -34,71 +33,90 @@ hWriteInt hdl n = do
 		hPutBuf hdl (castPtr p) 4
 	return ()
 
-data Cons = Cons !Handle !(MVar ()) !Int deriving Eq
+data Cons = Cons !Handle !Int deriving Eq
 
 openHandle path mode = do
-	var <- newMVar ()
 	exists <- doesFileExist path
 	hdl <- openBinaryFile path mode
 	unless exists $ do
 		hWriteInt hdl (-1)
 		hWriteInt hdl (-1)
-	return (Cons hdl var 0)
+	return (Cons hdl 0)
 
 -- Closes a file. Values that depended on the handle will give errors
 -- if their operations are used.
-closeHandle (Cons hdl _ _) = hClose hdl
-
-withLock (Cons _ var _) m = modifyMVar var $ \_ -> liftM ((,) ()) m
+closeHandle (Cons hdl _) = hClose hdl
 
 -- Functions for building and taking apart values.
 
-newCons c@(Cons hdl var i) (Cons hdl2 _ j)
-	| hdl == hdl2	= unsafePerformIO $ withLock c $ do
+newCons (Cons hdl i) (Cons hdl2 j)
+#ifdef DEBUG
+	| hdl /= hdl2	= error "newCons: have to come from same file"
+#endif
+	| otherwise	= unsafePerformIO $ do
 		hSeek hdl SeekFromEnd 0
 		pos <- hTell hdl
 		hWriteInt hdl i
 		hWriteInt hdl j
-		return (Cons hdl var (fromIntegral pos))
-	| otherwise	= error "newCons: have to come from same file"
+		return (Cons hdl (fromIntegral pos))
+{-# INLINE newCons #-}
 
-newInt (Cons hdl var _) n
+newInt (Cons hdl _) n
+#ifdef DEBUG
 	| n < 0		= error "newInt: has to be non-negative"
-	| otherwise	= Cons hdl var (-(n + 1))
+#endif
+	| otherwise	= Cons hdl (-(n + 1))
+{-# INLINE newInt #-}
 
-isPair (Cons _ _ i) = i >= 0
+isPair (Cons _ i) = i >= 0
+{-# INLINE isPair #-}
 
-first c@(Cons hdl var i)
+first c@(Cons hdl i)
+#ifdef DEBUG
 	| i < 0		= error $ "first: not a pair: " ++ show (int c)
-	| otherwise	= withLock c $ do
+#endif
+	| otherwise	= do
 		hSeek hdl AbsoluteSeek (fromIntegral i)
 		n <- hReadInt hdl
-		return (Cons hdl var n)
+		return (Cons hdl n)
+{-# INLINE first #-}
 
-second c@(Cons hdl var i)
+second c@(Cons hdl i)
+#ifdef DEBUG
 	| i < 0		= error $ "second: not a pair: " ++ show (int c)
-	| otherwise	= withLock c $ do
+#endif
+	| otherwise	= do
 		hSeek hdl AbsoluteSeek (fromIntegral (i + 4))
 		n <- hReadInt hdl
-		return (Cons hdl var n)
+		return (Cons hdl n)
+{-# INLINE second #-}
 
-int c@(Cons hd _ i)
+int c@(Cons hd i)
+#ifdef DEBUG
 	| i >= 0	= error $ "int: not an int: " ++ unsafePerformIO (shw c)
+#endif
 	| otherwise	= -(i + 1)
+{-# INLINE int #-}
 
-setFirst c@(Cons hdl _ i) (Cons hdl2 _ j)
+setFirst c@(Cons hdl i) (Cons hdl2 j)
+#ifdef DEBUG
 	| i < 0		= error $ "setFirst: not a pair: " ++ show (int c)
 	| hdl /= hdl2	= error "setFirst: have to come from same file"
-	| otherwise	= withLock c $ do
+#endif
+	| otherwise	= do
 		hSeek hdl AbsoluteSeek (fromIntegral i)
 		hWriteInt hdl j
+{-# INLINE setFirst #-}
 
-setSecond c@(Cons hdl _ i) (Cons hdl2 _ j)
+setSecond c@(Cons hdl i) (Cons hdl2 j)
+#ifdef DEBUG
 	| i < 0		= error $ "setSecond: not a pair: " ++ show (int c)
 	| hdl /= hdl2	= error "setSecond: have to come from same file"
-	| otherwise	= withLock c $ do
+#endif
+	| otherwise	= do
 		hSeek hdl AbsoluteSeek (fromIntegral (i + 4))
 		hWriteInt hdl j
+{-# INLINE setSecond #-}
 
 list [x] = newCons x (newInt x 0)
 list (x:xs) = newCons x (list xs)
@@ -112,8 +130,10 @@ nth 0 cons = first cons
 nth n cons = second cons >>= nth (n - 1)
 
 padWithZeros s = s ++ replicate (3 - length s `mod` 3) '\0'
+{-# INLINE padWithZeros #-}
 
 removeZeros s = reverse (dropWhile (=='\0') (reverse s))
+{-# INLINE removeZeros #-}
 
 pack (c1 : c2 : c3 : xs) = (shiftL c1 16 .|. shiftL c2 8 .|. c3) : pack xs
 pack [] = []
@@ -124,6 +144,7 @@ unpack [] = []
 encodeString hdl s = list $ map (newInt hdl) $ pack $ map ord $ padWithZeros s
 
 decodeString cons = liftM (removeZeros . map chr . unpack . map int) (toList cons)
+{-# INLINE decodeString #-}
 
 shw cons = if isPair cons then
 		do
@@ -223,4 +244,14 @@ delete cmpr k t = do
 				setFirst val x
 			else
 				setFirst t (newInt t 0)
+
+depth idx = if isPair idx then
+	liftM2 (\x y -> 1 + max x y) (nth 2 idx >>= depth) (nth 3 idx >>= depth)
+	else
+	return 0
+
+size idx = if isPair idx then
+	liftM2 (+) (nth 2 idx >>= size) (nth 3 idx >>= size)
+	else
+	return 1
 

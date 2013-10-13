@@ -49,6 +49,15 @@ indexFileName = do
 flatten hdl [] = newInt hdl 0
 flatten hdl (x:_) = x
 
+hGetString 0 _ = return []
+hGetString n fl = do
+	b <- hIsEOF fl
+	if b then
+		return []
+	else 
+		liftM2 (:) (hGetChar fl) (hGetString (n - 1) fl)
+{-# INLINE hGetString #-}
+
 -- We maintain a distinction between "names" and "logical names," in order
 -- to handle files that have been unpacked from archives. The logical names
 -- are the names the user will see, and are a concatenation of paths
@@ -59,18 +68,30 @@ flatten hdl (x:_) = x
 -- with the given file.
 index name logicalName = catch (do
 	putStrLn name
-	fl <- openBinaryFile name ReadMode
-	contents <- hGetContents fl
-	let s = takeFileName name ++ if all isPrintable contents then contents else ""
 	idxNm <- indexFileName
 	idx <- openHandle idxNm ReadWriteMode
 	let nm = encodeString idx logicalName
+	let addChunk add = do
+		(ls, existing) <- lookIdxImpl add add idx
+		when (name `notElem` ls) $
+			insert cmpr2 (encodeString idx add) (newCons nm existing) idx
+		(ls, existing) <- lookIdxImpl (reverse add) (reverse add) idx
+		when (name `notElem` ls) $
+			insert cmpr2 (encodeString idx (reverse add)) (newCons nm existing) idx
 	mapM_
-		(\add -> do
-			(ls, existing) <- lookIdxImpl add add idx
-			when (name `notElem` ls) $
-				insert cmpr2 (encodeString idx add) (newCons nm existing) idx)
-		(indexAddition s)
+		addChunk
+		(indexAddition (takeFileName name))
+	fl <- openBinaryFile name ReadMode
+	let loop = do
+		s <- liftM toUpperCase (hGetString 5 fl)
+		if not (all isPrintable s) then
+			return ()
+		else if length s < 5 then
+			addChunk (s ++ replicate (5 - length s) ' ')
+		else do
+			addChunk s
+			loop
+	loop
 	closeHandle idx
 	hClose fl)
 	(\(er :: IOError) -> putStrLn (":::" ++ show er))
