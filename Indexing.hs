@@ -38,11 +38,7 @@ chunks n ls = if length ls < n then
 	else
 		chunks0 n ls
 
-chunks2 n ls
-	| length ls < n	= [ls ++ replicate (n - length ls) ' ']
-	| otherwise	= take n ls : chunks2 n (drop n ls)
-
-indexAddition text = concatMap (\chnk -> [chnk, reverse chnk]) $ chunks2 5 $ toUpperCase text
+indexAddition text = concatMap (\chnk -> [chnk, reverse chnk]) $ chunks0 5 $ toUpperCase text ++ "   "
 
 isPrintable c = ord c == 9 || ord c == 10 || ord c == 13 || ord c >= 32
 
@@ -75,9 +71,7 @@ index name logicalName = catch (do
 	idx <- openHandle idxNm ReadWriteMode
 	let nm = encodeString idx logicalName
 
-	-- Adding the file's name to the index. The code below does something
-	-- identical with the body of the document, but it has been
-	-- optimized so as not to depend on the /indexAddition/ function.
+	-- Adding the file's name to the index.
 	mapM_
 		(addChunkToIndex logicalName nm idx)
 		(indexAddition (takeFileName name))
@@ -104,13 +98,15 @@ index name logicalName = catch (do
 		-- with the given file.
 		fl <- openBinaryFile name ReadMode
 		sz <- hFileSize fl
-		sequence_ $ replicate (fromInteger sz `div` 5) $ do
+		let loop n = when (n >= 5) $ do
 			c1 <- hGetChar fl
 			c2 <- hGetChar fl
 			c3 <- hGetChar fl
 			c4 <- hGetChar fl
 			c5 <- hGetChar fl
 			addChunkToIndex logicalName nm idx (toUpperCase [c1, c2, c3, c4, c5])
+			loop (n - 5)
+		loop (fromInteger sz)
 		remaining <- hGetContents fl
 		addChunkToIndex logicalName nm idx (toUpperCase remaining ++ replicate (5 - length remaining) ' ')
 		hClose fl
