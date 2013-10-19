@@ -40,7 +40,7 @@ chunks n ls = if length ls < n then
 
 indexAddition text = concatMap (\chnk -> [chnk, reverse chnk]) $ chunks0 5 $ toUpperCase text ++ "   "
 
-isPrintable c = ord c == 9 || ord c == 10 || ord c == 13 || ord c >= 32
+isPrintable c = c == '\t' || c == '\n' || c == '\r' || ord c >= 32
 
 indexFileName = do
 	dir <- getAppUserDataDirectory "Index"
