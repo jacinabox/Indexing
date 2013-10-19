@@ -44,7 +44,7 @@ chunksPadded n ls = init cs ++ [last cs ++ replicate (n - length (last cs)) ' ']
 
 indexAddition text = concatMap (\chnk -> [chnk, reverse chnk]) $ chunksPadded 5 $ toUpperCase text
 
-isPrintable c = c `elem` "\t\n\r" || ord c >= 32
+isPrintable c = ord c >= 32 || c == '\t' || c == '\n' || c == '\r'
 
 indexFileName n = do
 	dir <- getAppUserDataDirectory "Index"
