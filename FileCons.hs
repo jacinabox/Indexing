@@ -121,10 +121,14 @@ setSecond c@(Cons hdl i) (Cons hdl2 j)
 list [x] = newCons x (newInt x 0)
 list (x:xs) = newCons x (list xs)
 
-toList cons = if isPair cons then
-		liftM2 (:) (first cons) (second cons >>= toList)
-	else
-		return []
+toList = rec [] where
+	rec acc cons = if isPair cons then
+		do	
+			x <- first cons
+			s <- second cons
+			rec (x : acc) s
+		else
+			return (reverse acc)
 
 nth 0 cons = first cons
 nth n cons = second cons >>= nth (n - 1)

@@ -13,11 +13,12 @@ import Data.Function
 import System.Environment
 import Data.IORef
 import System.Process
-import Control.Parallel.Strategies
+import Control.Concurrent.Async
 import Data.List.Extras.Argmax
 import System.FilePath
 import Control.Exception
 import Data.Maybe
+import Data.Either
 import Prelude hiding (catch)
 import FileCons
 import Replace
@@ -30,22 +31,30 @@ import Unpacks
 toUpperCase s = map toUpper s
 
 chunks0 n ls
-	| length ls < n	= []
+	| length ls < n	= [ls]
 	| otherwise	= take n ls : chunks0 n (drop n ls)
 
 chunks n ls = if length ls < n then
 		[ls]
 	else
-		chunks0 n ls
+		init (chunks0 n ls)
 
-indexAddition text = concatMap (\chnk -> [chnk, reverse chnk]) $ chunks0 5 $ toUpperCase text ++ "   "
+chunksPadded n ls = init cs ++ [last cs ++ replicate (n - length (last cs)) ' ']
+	where cs = chunks0 n ls
 
-isPrintable c = ord c >= 32 || c == '\t' || c == '\n' || c == '\r'
+indexAddition text = concatMap (\chnk -> [chnk, reverse chnk]) $ chunksPadded 5 $ toUpperCase text
 
-indexFileName = do
+isPrintable c = c `elem` "\t\n\r" || ord c >= 32
+
+indexFileName n = do
 	dir <- getAppUserDataDirectory "Index"
 	createDirectoryIfMissing False dir
-	return (dir ++ pathDelimiter : "Index.dat")
+	return (dir ++ pathDelimiter : "Index" ++ show n ++ ".dat")
+
+openIndexes mode = mapM (\x -> do
+		idxNm <- indexFileName x
+		openHandle idxNm mode)
+	[1..8]
 
 flatten hdl [] = newInt hdl 0
 flatten hdl (x:_) = x
@@ -65,13 +74,12 @@ addChunkToIndex logicalName nm idx add = do
 -- separated by @s. The other names are the places where you find the
 -- temporary files that resulted from unpacking.
 
-index name logicalName = catch (do
-	putStrLn name
-	idxNm <- indexFileName
-	idx <- openHandle idxNm ReadWriteMode
+index name logicalName idx = catch (do
 	let nm = encodeString idx logicalName
 
-	-- Adding the file's name to the index.
+	-- Adding the file's name to the index. Something identical is done
+	-- for the body of the file, but it has been optimized to not use
+	-- /indexAddition/.
 	mapM_
 		(addChunkToIndex logicalName nm idx)
 		(indexAddition (takeFileName name))
@@ -109,41 +117,59 @@ index name logicalName = catch (do
 		loop (fromInteger sz)
 		remaining <- hGetContents fl
 		addChunkToIndex logicalName nm idx (toUpperCase remaining ++ replicate (5 - length remaining) ' ')
-		hClose fl
-	closeHandle idx)
+		hClose fl)
 	(\(er :: IOError) -> putStrLn (":::" ++ show er))
 
-details1 name logicalName code = maybe
-	code
-	(\f -> do
-		unpacked <- f name
-		indexDirectory unpacked (logicalName ++ "@"))
-	(lookup (takeExtension name) unpacks)
+doUnpacks dir logicalDir fls dirs = liftM (map (\nm -> Right (dir ++ nm, logicalDir ++ nm)) dirs ++) $
+	mapM (\nm -> let def = Left (dir ++ nm, logicalDir ++ nm) in
+		maybe
+		(return def)
+		(\f -> catch (do
+			unpacked <- f (dir ++ nm)
+			return (Right (unpacked, logicalDir ++ nm ++ "@")))
+			(\(er :: IOError) -> do
+				putStrLn (":::" ++ show er)
+				return def))
+		(lookup (takeExtension nm) unpacks))
+	fls
 
-details2 name code = do
+details name code = do
 	userdata <- getAppUserDataDirectory "Index"
 	tmp <- getTemporaryDirectory
 	unless
 		(name == userdata || name == tmp || name == "/dev" || name == "/sys")
 		code
 
--- What this does is decide, for each thing in a directory,
--- whether it is a file or a directory. If it is a file, we call the
--- /index/ function to index it. If it is a directory, we recurse in order to
--- index the directory. (There is a special case when a file is an
--- unpackable archive, in which case we do the unpacking, then start
--- indexing the resulting /temporary directory/.)
+mapPair f (x, y) = (f x, f y)
+
 indexDirectory dir logicalDir = catch (do
+	idxs <- openIndexes ReadWriteMode
+
+	-- Splits the directory's contents into files and directories
 	contents <- getDirectoryContents dir
-	mapM_ (\nm -> let name = dir ++ nm in
-		let logicalName = logicalDir ++ nm in
-		unless (nm == "." || nm == "..") $ do
-		b <- doesFileExist name
-		if b then
-				details1 name logicalName {-Primary control flow:-}(index name logicalName)
-			else
-				details2 name {-Primary control flow:-}(indexDirectory (name ++ [pathDelimiter]) (logicalName ++ [pathDelimiter])))
-		contents)
+	isFl <- mapM (doesFileExist . (dir++)) contents
+	let (fls, dirs) = mapPair (map snd) $ partition fst $ zip isFl contents
+
+	-- Unpacks the files that can be unpacked, turning them into directories
+	-- for indexing. This results in new lists of files and directories.
+	paths <- doUnpacks dir logicalDir fls dirs
+	let (fls, dirs) = partitionEithers paths
+
+	-- Indexes the files.
+	mapM_ (\chnk -> do
+		mapM_ (putStrLn . snd) chnk
+		mapConcurrently
+			(\((path, logicalPath), idx) -> index path logicalPath idx)
+			(zip chnk idxs))
+		(chunks0 8 fls)
+
+	mapM_ closeHandle idxs
+
+	-- Indexes the directories separately.
+	mapM_ (\(path, logicalPath) ->
+		unless (takeFileName path == "." || takeFileName path == "..") $
+			details path {-Primary control flow:-}(indexDirectory (path ++ [pathDelimiter]) (logicalPath ++ [pathDelimiter])))
+		dirs)
 	(\(er :: IOError) -> putStrLn (":::" ++ show er))
 
 #ifdef WIN32
@@ -173,7 +199,7 @@ lookIdxImpl k k2 idx = do
 
 -- A pure version of lookIdxImpl. Its use is justified by the fact that we
 -- are doing queries only, so the contents of the index are unlikely to change.
-lookIdx k k2 idx = fst $ unsafePerformIO (lookIdxImpl k k2 idx)
+lookIdx k k2 idxs = concat $ map fst $ unsafePerformIO (mapConcurrently (lookIdxImpl k k2) idxs)
 
 look keyword idx = do
 		window <- map (\n -> argmax length [drop n keyword, reverse (take n keyword)]) [0..4]
@@ -195,14 +221,13 @@ extractText name = do
 -- results. Then it winnows this list down by searching for the keywords
 -- in the texts of the files.
 lookKeywords keywords caseSensitive = do
-	idxNm <- indexFileName
 	let longKeywords = filter ((>=5) . length) keywords
-	idx <- openHandle idxNm ReadMode
-	let possibilities = nub $ intersects $ map ((`look` idx) . toUpperCase)
+	idxs <- openIndexes ReadMode
+	let possibilities = nub $ intersects $ map ((`look` idxs) . toUpperCase)
 		$ if null longKeywords then keywords else longKeywords
 	texts <- mapM (\nm -> liftM (\str -> (nm, str)) (extractText nm))
 		possibilities
-	closeHandle idx
+	mapM_ closeHandle idxs
 	let caseFunction = if caseSensitive then id else toUpperCase
 	let keywords2 = map caseFunction keywords
 	return $ filter
@@ -219,7 +244,7 @@ pad n s = replicate (n - length s) ' ' ++ s
 contexts keywords text caseSensitive = concatMap (\k -> case findIndex (\suffix -> isPrefixOf (caseFunction k) suffix) (tails (caseFunction text)) of
 		Just i -> let context = take 67 (drop (i - 33) text) in
 			if all isPrintable context then
-				pad 5 (show $ lineNumber i 1 $ lines text) ++ " ..." ++ replace [("\n", " "), ("\r", " ")] context ++ "...\n"
+				pad 5 (show $ lineNumber i 1 $ lines text) ++ " ..." ++ replace [("\n", " "), ("\t", " ")] context ++ "...\n"
 			else
 				""
 		Nothing -> "")
