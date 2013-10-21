@@ -75,20 +75,27 @@ sortResults sortRef resultsRef = do
 		ByExtension -> takeExtension s) res,
 		nKeywords)
 
-wndProc :: IORef (Maybe HWND) -> IORef ([(String, [String])], Int32) -> IORef Sort -> HWND -> UINT -> WPARAM -> LPARAM -> IO LRESULT
-wndProc ref resultsRef sortRef wnd msg wParam lParam
-	| msg == wM_USER	= -- This is where we actually do the search
-		do
-		drawMessage wnd
-		Just txt <- readIORef ref
-		s <- getWindowText txt
-		let keywords = filter ((>2) . length) (parseKeywords s)
-		if null keywords then
-				writeIORef resultsRef ([], 0)
+wndProc :: IORef (Maybe HWND) -> IORef ([(String, [String])], Int32) -> IORef Sort -> IORef Int32 -> HWND -> UINT -> WPARAM -> LPARAM -> IO LRESULT
+wndProc ref resultsRef sortRef scrollRef wnd msg wParam lParam
+	| msg == wM_USER	= do
+		if wParam == vK_RETURN then -- This is where we actually do the search
+				do
+				drawMessage wnd
+				Just txt <- readIORef ref
+				s <- getWindowText txt
+				let keywords = filter ((>2) . length) (parseKeywords s)
+				if null keywords then
+						writeIORef resultsRef ([], 0)
+					else do
+						res <- lookKeywords keywords False
+						writeIORef resultsRef (map (\(nm, text) -> (nm, contexts keywords text False)) res, fromIntegral $ length keywords)
+				sortResults sortRef resultsRef
+				writeIORef scrollRef 0
+			else if wParam == vK_UP then
+				modifyIORef' scrollRef (\x -> 0 `max` (x - 100))
 			else do
-				res <- lookKeywords keywords False
-				writeIORef resultsRef (map (\(nm, text) -> (nm, contexts keywords text False)) res, fromIntegral $ length keywords)
-		sortResults sortRef resultsRef
+				(res, nKeywords) <- readIORef resultsRef
+				modifyIORef' scrollRef (\x -> (((nKeywords+1)*textHeight+3*pad)*fromIntegral (length res)) `min` (x + 100))
 		invalidateRect (Just wnd) Nothing True
 		return 0
 	| msg == wM_SIZE	= do
@@ -102,12 +109,13 @@ wndProc ref resultsRef sortRef wnd msg wParam lParam
 	| msg == wM_PAINT	= allocaPAINTSTRUCT $ \ps -> do
 		dc <- beginPaint wnd ps
 		(results, nKeywords) <- readIORef resultsRef
+		scroll <- readIORef scrollRef
 		white <- getStockBrush wHITE_BRUSH
 		font <- getStockFont aNSI_VAR_FONT
 		oldFont <- selectFont dc font
 
 		pen <- createPen pS_SOLID 0 (rgb 128 128 128)
-		yRef <- newIORef textBoxHeight
+		yRef <- newIORef (textBoxHeight - scroll)
 		mapM_
 			(\(result, contexts) -> do
 				y <- readIORef yRef
@@ -161,8 +169,10 @@ dLGC_WANTCHARS :: Int32
 dLGC_WANTCHARS = 128
 
 txtProc parent proc wnd msg wParam lParam
-	| msg == wM_KEYUP && wParam == vK_RETURN	= sendMessage parent wM_USER 0 0
-	| otherwise					= proc wnd msg wParam lParam
+	| msg == wM_KEYUP && (wParam == vK_RETURN || wParam == vK_UP || wParam == vK_DOWN)
+		= sendMessage parent wM_USER wParam 0
+	| otherwise
+		= proc wnd msg wParam lParam
 
 winMain = do
 	inst <- getModuleHandle Nothing
@@ -172,9 +182,9 @@ winMain = do
 	ref <- newIORef Nothing
 	resultsRef <- newIORef ([], 0)
 	sortRef <- newIORef ByPath
-	wnd <- createWindow (mkClassName "class") "Desktop Search" (wS_VISIBLE .|. wS_OVERLAPPEDWINDOW .|. wS_CLIPCHILDREN .|. wS_VSCROLL) Nothing Nothing Nothing Nothing Nothing Nothing inst (wndProc ref resultsRef sortRef)
+	scrollRef <- newIORef 0
+	wnd <- createWindow (mkClassName "class") "Desktop Search" (wS_VISIBLE .|. wS_OVERLAPPEDWINDOW .|. wS_CLIPCHILDREN) Nothing Nothing Nothing Nothing Nothing Nothing inst (wndProc ref resultsRef sortRef scrollRef)
 	txt <- createWindow (mkClassName "Edit") "" (wS_VISIBLE .|. wS_CHILDWINDOW) (Just 0) (Just 0) (Just 100) (Just 10) (Just wnd) Nothing inst (defWindowProc . Just)
---	scrl <- createWindow (mkClassName "ScrollBar") "" (wS_VISIBLE .|. wS_CHILDWINDOW .|. sBS_VERT) (Just 0) (Just 0) (Just 10) (Just 10) (Just wnd) Nothing inst (defWindowProc . Just)
 	writeIORef ref (Just txt)
 	subclassProc txt (txtProc wnd)
 	setFocus txt
