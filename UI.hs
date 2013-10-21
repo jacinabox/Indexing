@@ -17,7 +17,9 @@ import Unsafe.Coerce
 import System.Environment
 import System.Directory
 import System.FilePath
+import System.Process
 import Indexing
+import Split
 
 foreign import stdcall "windows.h CallWindowProcW" callWindowProc :: FunPtr WindowClosure -> HWND -> UINT -> WPARAM -> LPARAM -> IO LRESULT
 
@@ -75,6 +77,12 @@ sortResults sortRef resultsRef = do
 		ByExtension -> takeExtension s) res,
 		nKeywords)
 
+loWord :: Int32 -> Int32
+loWord n = n .&. 32767
+
+hiWord :: Int32 -> Int32
+hiWord n = shiftR n 16
+
 wndProc :: IORef (Maybe HWND) -> IORef ([(String, [String])], Int32) -> IORef Sort -> IORef Int32 -> HWND -> UINT -> WPARAM -> LPARAM -> IO LRESULT
 wndProc ref resultsRef sortRef scrollRef wnd msg wParam lParam
 	| msg == wM_USER	= do
@@ -97,6 +105,14 @@ wndProc ref resultsRef sortRef scrollRef wnd msg wParam lParam
 				(res, nKeywords) <- readIORef resultsRef
 				modifyIORef' scrollRef (\x -> (((nKeywords+1)*textHeight+3*pad)*fromIntegral (length res)) `min` (x + 100))
 		invalidateRect (Just wnd) Nothing True
+		return 0
+	| msg == wM_LBUTTONUP	= do
+		(res, nKeywords) <- readIORef resultsRef
+		scroll <- readIORef scrollRef
+		let i = (hiWord lParam - textBoxHeight + scroll) `div` ((nKeywords+1)*textHeight+3*pad)
+		when (i < fromIntegral (length res)) $ do
+			createProcess (shell $ head $ split '@' $ fst $ res !! fromIntegral i)
+			return ()
 		return 0
 	| msg == wM_SIZE	= do
 		may <- readIORef ref
