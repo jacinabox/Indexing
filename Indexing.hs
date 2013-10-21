@@ -1,6 +1,6 @@
 {-# LANGUAGE ScopedTypeVariables, CPP #-}
 
-module Main (main) where
+module Indexing (indexFileName, index, indexDirectory, fullIndex, lookKeywords, contexts, parseKeywords) where
 
 import Data.List hiding (union, insert)
 import Control.Monad
@@ -10,7 +10,6 @@ import System.IO
 import Data.Array.Unboxed (UArray)
 import Data.Array.IArray hiding (index)
 import Data.Function
-import System.Environment
 import Data.IORef
 import System.Process
 import Control.Concurrent.Async
@@ -241,36 +240,20 @@ lineNumber idx num (line:lines) = if idx < length line then
 
 pad n s = replicate (n - length s) ' ' ++ s
 
-contexts keywords text caseSensitive = concatMap (\k -> case findIndex (\suffix -> isPrefixOf (caseFunction k) suffix) (tails (caseFunction text)) of
+contexts keywords text caseSensitive = catMaybes $ map (\k -> case findIndex (\suffix -> isPrefixOf (caseFunction k) suffix) (tails (caseFunction text)) of
 		Just i -> let context = take 67 (drop (i - 33) text) in
 			if all isPrintable context then
-				pad 5 (show $ lineNumber i 1 $ lines text) ++ " ..." ++ replace [("\n", " "), ("\t", " ")] context ++ "...\n"
+				Just $ pad 5 (show $ lineNumber i 1 $ lines text) ++ " ..." ++ replace [("\n", " "), ("\t", " ")] context ++ "..."
 			else
-				""
-		Nothing -> "")
+				Nothing
+		Nothing -> Nothing)
 	keywords where
 	caseFunction = if caseSensitive then id else toUpperCase
 
-main = do
-	args <- getArgs
-	let keywords = filter ((>2) . length) args
-	if not (null args) && head args == "-i" then
-		if length args == 1 then
-			fullIndex
-		else do
-			dir <- canonicalizePath (args !! 1)
-			indexDirectory dir dir
-	else if null keywords then do
-		putStrLn "Index: no keywords"
-		putStrLn "Use -c for case sensitive search"
-		putStrLn "Use -i to do a full index"
-		putStrLn "Use -i dir to index a directory"
-	else do
-		let caseSensitive = "-c" `elem` args
-		results <- lookKeywords keywords caseSensitive
-		mapM_ (\(nm, text) -> do
-				putStrLn ""
-				putStrLn ("  " ++ nm)
-				putStr (contexts keywords text caseSensitive))
-			results
-		when (null results) (putStrLn "Index: no results found")
+parseKeywords (c:cs)
+	| c == '"'	= let (kw, rest) = break (=='"') cs in
+		kw : parseKeywords (drop 2 rest)
+	| otherwise	= let (kw, rest) = break (==' ') (c:cs) in
+		kw : parseKeywords (drop 1 rest)
+parseKeywords [] = []
+
