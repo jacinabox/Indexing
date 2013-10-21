@@ -169,7 +169,7 @@ dLGC_WANTCHARS :: Int32
 dLGC_WANTCHARS = 128
 
 txtProc parent proc wnd msg wParam lParam
-	| msg == wM_KEYUP && (wParam == vK_RETURN || wParam == vK_UP || wParam == vK_DOWN)
+	| msg == wM_KEYDOWN && (wParam == vK_RETURN || wParam == vK_UP || wParam == vK_DOWN)
 		= sendMessage parent wM_USER wParam 0
 	| otherwise
 		= proc wnd msg wParam lParam
