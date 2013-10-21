@@ -33,8 +33,11 @@ getWindowText wnd = do
 
 data Sort = ByPath | ByName | ByExtension
 
+textBoxHeight :: Int32
+textBoxHeight = 20
+
 textHeight :: Int32
-textHeight = 18
+textHeight = 14
 
 pad :: Int32
 pad = 3
@@ -55,9 +58,12 @@ subclassProc wnd proc = do
 
 drawMessage wnd = do
 	dc <- getDC (Just wnd)
+	font <- getStockFont aNSI_VAR_FONT
+	oldFont <- selectFont dc font
 	white <- getStockBrush wHITE_BRUSH
-	fillRect dc (0, textHeight + 1, 32767, 32767) white
-	textOut dc pad (textHeight + pad) "Please wait"
+	fillRect dc (0, textBoxHeight + 1, 32767, 32767) white
+	textOut dc pad (textBoxHeight + pad) "Please wait"
+	selectFont dc oldFont
 	releaseDC (Just wnd) dc
 
 sortResults sortRef resultsRef = do
@@ -69,12 +75,12 @@ sortResults sortRef resultsRef = do
 		ByExtension -> takeExtension s) res,
 		nKeywords)
 
-wndProc :: IORef (Maybe (HWND, HWND)) -> IORef ([(String, [String])], Int32) -> IORef Sort -> HWND -> UINT -> WPARAM -> LPARAM -> IO LRESULT
+wndProc :: IORef (Maybe HWND) -> IORef ([(String, [String])], Int32) -> IORef Sort -> HWND -> UINT -> WPARAM -> LPARAM -> IO LRESULT
 wndProc ref resultsRef sortRef wnd msg wParam lParam
 	| msg == wM_USER	= -- This is where we actually do the search
 		do
 		drawMessage wnd
-		Just (txt, _) <- readIORef ref
+		Just txt <- readIORef ref
 		s <- getWindowText txt
 		let keywords = filter ((>2) . length) (parseKeywords s)
 		if null keywords then
@@ -88,19 +94,20 @@ wndProc ref resultsRef sortRef wnd msg wParam lParam
 	| msg == wM_SIZE	= do
 		may <- readIORef ref
 		case may of
-			Just (txt, scrl) -> do
+			Just txt -> do
 				(_, _, x, y) <- getClientRect wnd
-				moveWindow txt 0 0 (fromIntegral x) (fromIntegral textHeight) True
-				moveWindow scrl (fromIntegral x - 20) (fromIntegral textHeight + 1) 20 (fromIntegral (y - textHeight - 1)) True
+				moveWindow txt 0 0 (fromIntegral x) (fromIntegral textBoxHeight) True
 			Nothing -> return ()
 		return 0
 	| msg == wM_PAINT	= allocaPAINTSTRUCT $ \ps -> do
 		dc <- beginPaint wnd ps
 		(results, nKeywords) <- readIORef resultsRef
 		white <- getStockBrush wHITE_BRUSH
+		font <- getStockFont aNSI_VAR_FONT
+		oldFont <- selectFont dc font
 
 		pen <- createPen pS_SOLID 0 (rgb 128 128 128)
-		yRef <- newIORef textHeight
+		yRef <- newIORef textBoxHeight
 		mapM_
 			(\(result, contexts) -> do
 				y <- readIORef yRef
@@ -130,11 +137,12 @@ wndProc ref resultsRef sortRef wnd msg wParam lParam
 
 		pen <- createPen pS_SOLID 0 (rgb 0 128 255)
 		oldpen <- selectPen dc pen
-		moveToEx dc 0 textHeight
-		lineTo dc 32767 textHeight
+		moveToEx dc 0 textBoxHeight
+		lineTo dc 32767 textBoxHeight
 		selectPen dc oldpen
 		deletePen pen
 
+		selectFont dc oldFont
 		endPaint wnd ps
 		return 0
 	| msg == wM_CLOSE	= exitSuccess
@@ -164,10 +172,10 @@ winMain = do
 	ref <- newIORef Nothing
 	resultsRef <- newIORef ([], 0)
 	sortRef <- newIORef ByPath
-	wnd <- createWindow (mkClassName "class") "Desktop Search" (wS_VISIBLE .|. wS_OVERLAPPEDWINDOW .|. wS_CLIPCHILDREN) Nothing Nothing Nothing Nothing Nothing Nothing inst (wndProc ref resultsRef sortRef)
+	wnd <- createWindow (mkClassName "class") "Desktop Search" (wS_VISIBLE .|. wS_OVERLAPPEDWINDOW .|. wS_CLIPCHILDREN .|. wS_VSCROLL) Nothing Nothing Nothing Nothing Nothing Nothing inst (wndProc ref resultsRef sortRef)
 	txt <- createWindow (mkClassName "Edit") "" (wS_VISIBLE .|. wS_CHILDWINDOW) (Just 0) (Just 0) (Just 100) (Just 10) (Just wnd) Nothing inst (defWindowProc . Just)
-	scrl <- createWindow (mkClassName "ScrollBar") "" (wS_VISIBLE .|. wS_CHILDWINDOW .|. sBS_VERT) (Just 0) (Just 0) (Just 10) (Just 10) (Just wnd) Nothing inst (defWindowProc . Just)
-	writeIORef ref (Just (txt, scrl))
+--	scrl <- createWindow (mkClassName "ScrollBar") "" (wS_VISIBLE .|. wS_CHILDWINDOW .|. sBS_VERT) (Just 0) (Just 0) (Just 10) (Just 10) (Just wnd) Nothing inst (defWindowProc . Just)
+	writeIORef ref (Just txt)
 	subclassProc txt (txtProc wnd)
 	setFocus txt
 	sendMessage wnd wM_SIZE 0 0
