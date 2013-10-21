@@ -1,14 +1,13 @@
 Indexing
 ========
 
-A cross-platform, command-line desktop search application. It is able to search within gzip and bzip2 archives.
+A desktop search application for Windows. It is able to search within gzip and bzip2 archives.
 
-At present indexing is done manually, by using index -i followed by a directory.
-
-The command to search the index is "index" followed by keywords.
+At present indexing is done manually, by using index -i followed by a directory. Command line output is achieved by entering keywords on the command prompt. Giving no keywords opens the GUI.
 
 An overview of the components of this project:
 
+* UI.hs - a Win32 GUI, including the entry point.
 * Indexing.hs - the main indexing and searching code.
 * Unpacks.hs - a module that does unpacking of archive files for searching. Also does conversion to plain text.
 * FileCons.hs - the low-level file access code used by Indexing.hs. Also stands on its own as a library.
@@ -16,13 +15,7 @@ An overview of the components of this project:
 
 To build the Haskell part of the application, use
 
-ghc Indexing.hs -o Index -O2
-
-on Linux and
-
-ghc Indexing.hs -o Index.exe -O2 -DWIN32
-
-on Windows.
+ghc UI.hs -o Index -O2 -DWIN32
 
 Hard problems to solve with this project:
 
