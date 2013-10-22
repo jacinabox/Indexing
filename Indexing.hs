@@ -48,7 +48,6 @@ indexFileName = do
 	createDirectoryIfMissing False dir
 	return (dir ++ pathDelimiter : "Index.dat")
 
-<<<<<<< HEAD
 addChunkToIndex logicalName idx add = do
 	mp <- readIORef idx
 	let ls = maybe [] id (lookup add mp)
@@ -58,11 +57,6 @@ addChunkToIndex logicalName idx add = do
 	let ls = maybe [] id (lookup (reverse add) mp)
 	when (logicalName `notElem` ls) $
 		writeIORef idx $! insert (reverse add) (logicalName : ls) mp
-=======
-addChunkToIndex logicalName nm idx add = do
-	insertSingle add logicalName nm idx
-	insertSingle (reverse add) logicalName nm idx
->>>>>>> e7efccb8d0f27bac6a7f0479ea5302fff4dcfd29
 {-# INLINE addChunkToIndex #-}
 
 {-dlookup k k2 mp = maybeToList (lookup k mp) ++ map snd (takeWhile ((<=k2) . fst) (assocs r))
@@ -227,32 +221,7 @@ intersects ls = foldl1 intersect ls
 -- The process of doing a keyword search:
 --   lookKeywords deals with all the keywords the user has entered,
 --   look deals with a single keyword, breaking it up into 5-letter pieces.
-<<<<<<< HEAD
---   lookIdx searches for a single 5-letter string in the index.
-=======
 --   lookIdx searches for a single 5-letter piece in the index.
-
--- Returns all the files associated with the given key range.
-lookIdxImpl k k2 idx = do
-	f <- first idx
-	ls <- dlookup cmpr k k2 f
-	liftM concat $ mapM (\x -> toList x >>= mapM decodeString) ls
-{-# INLINE lookIdxImpl #-}
-
-insertSingle k v ins idx = do
-	cons <- lookupSingle cmpr k idx
-	f <- first cons
-	if isPair f then do
-		x <- nth 1 f
-		insert cmpr2 (encodeString idx k) (newCons ins x) cons
-	else
-		insert cmpr2 (encodeString idx k) (list [ins]) cons
-{-# INLINE insertSingle #-}
-
--- A pure version of lookIdxImpl. Its use is justified by the fact that we
--- are doing queries only, so the contents of the index are unlikely to change.
-lookIdx k k2 idx = unsafePerformIO (lookIdxImpl k k2 idx)
->>>>>>> e7efccb8d0f27bac6a7f0479ea5302fff4dcfd29
 
 max' f x1 x2
 	| f x1 > f x2	= x1
