@@ -46,6 +46,8 @@ pad = 3
 
 gWLP_WNDPROC = -4
 
+wM_MOUSEWHEEL = 522
+
 subclassProc :: HWND -> (WindowClosure -> WindowClosure) -> IO ()
 subclassProc wnd proc = do
 	oldProcVar <- newIORef Nothing
@@ -77,10 +79,10 @@ sortResults sortRef resultsRef = do
 		ByExtension -> takeExtension s) res,
 		nKeywords)
 
-loWord :: Int32 -> Int32
+loWord :: LPARAM -> LPARAM
 loWord n = n .&. 32767
 
-hiWord :: Int32 -> Int32
+hiWord :: LPARAM -> LPARAM
 hiWord n = shiftR n 16
 
 wndProc :: IORef (Maybe HWND) -> IORef ([(String, [String])], Int32) -> IORef Sort -> IORef Int32 -> HWND -> UINT -> WPARAM -> LPARAM -> IO LRESULT
@@ -107,6 +109,7 @@ wndProc ref resultsRef sortRef scrollRef wnd msg wParam lParam
 				modifyIORef' scrollRef (\x -> (((nKeywords+1)*textHeight+3*pad)*fromIntegral (length res)) `min` (x + 100))
 		invalidateRect (Just wnd) Nothing True
 		return 0
+	| msg == wM_MOUSEWHEEL	= sendMessage wnd wM_USER (if hiWord (fromIntegral wParam) > 0 then vK_UP else vK_DOWN) 0
 	| msg == wM_LBUTTONUP	= do
 		(res, nKeywords) <- readIORef resultsRef
 		scroll <- readIORef scrollRef
