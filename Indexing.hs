@@ -18,8 +18,10 @@ import System.FilePath
 import Control.Exception
 import Data.Maybe
 import Data.Map hiding (filter, map, null, findIndex)
+import qualified Data.Map as Map
 import Prelude hiding (catch, lookup)
 import Replace
+import FileCons
 import qualified Split
 import System.IO.Error
 import System.IO.Unsafe
@@ -143,16 +145,30 @@ indexDirectory dir logicalDir idx = catch (do
 		contents)
 	(\(er :: IOError) -> putStrLn (":::" ++ show er))
 
+readDict idx
+	| isPair idx	= liftM4 (\k v m1 m2 -> insert k v (union m1 m2)) (nth 0 idx) (nth 1 idx) (nth 2 idx >>= readDict) (nth 3 idx >>= readDict)
+	| otherwise	= return empty
+
+writeDict idx mp
+	| M.null mp	= return idx
+	| otherwise	= 
+
 indexWrapper dir = do
 	idxNm <- indexFileName
 	idxVal <- catch (do
-		fl <- readFile idxNm
-		return (read fl))
+		idx <- openHandle idxNm ReadMode
+		f <- first idx
+		idxVal <- readDict f
+		closeHandle idx)
 		(\(_ :: IOError) -> return empty)
+
 	idx <- newIORef idxVal
 	indexDirectory dir dir idx
 	idxVal <- readIORef idx
-	writeFile idxNm (show idxVal)
+
+	idx <- openHandle idxNm WriteMode
+	setFirst idx (writeDict idx idxVal)
+	closeHandle idx
 
 #ifdef WIN32
 fullIndex = do
@@ -173,7 +189,7 @@ max' f x1 x2
 	| f x1 > f x2	= x1
 	| otherwise	= x2
 
-lookIdx k k2 idx = concat $ dlookup k k2 idx
+lookIdx k k2 idx = concat $ unsafePerformIO $ dlookup k k2 idx
 
 look keyword idx = do
 		window <- map (\n -> max' length (drop n keyword) (reverse (take n keyword))) [0..4]
@@ -196,13 +212,13 @@ extractText name = do
 -- in the texts of the files.
 lookKeywords keywords caseSensitive = do
 	idxNm <- indexFileName
-	fl <- readFile idxNm 
-	let idx = read fl
+	idx <- openHandle idxNm ReadMode
 	let longKeywords = filter ((>=5) . length) keywords
 	let possibilities = nub $ intersects $ map ((`look` idx) . toUpperCase)
 		$ if null longKeywords then keywords else longKeywords
 	texts <- mapM (\nm -> liftM (\str -> (nm, str)) (extractText nm))
 		possibilities
+	closeHandle idx
 	let caseFunction = if caseSensitive then id else toUpperCase
 	let keywords2 = map caseFunction keywords
 	return $ filter
