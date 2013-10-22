@@ -33,9 +33,9 @@ hWriteInt hdl n = withForeignPtr intBuffer $ \p -> do
 data Cons = Cons !Handle !Int deriving Eq
 
 openHandle path mode = do
-	exists <- doesFileExist path
 	hdl <- openBinaryFile path mode
-	unless exists $ do
+	sz <- hFileSize hdl
+	when (sz == 0) $ do
 		hWriteInt hdl (-1)
 		hWriteInt hdl (-1)
 	return (Cons hdl 0)

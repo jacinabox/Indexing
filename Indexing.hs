@@ -194,7 +194,6 @@ max' f x1 x2
 
 -- The use of unsafePerformIO is justified by the fact that we are
 -- only doing reads and the index is unlikely to change.
-lookIdx :: String -> String -> Cons -> [String]
 lookIdx k k2 idx = concat $ unsafePerformIO $ dlookup cmpr k k2 idx >>= mapM (\x -> toList x >>= mapM decodeString)
 
 look keyword idx = do
