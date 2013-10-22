@@ -170,6 +170,10 @@ wndProc ref resultsRef sortRef scrollRef wnd msg wParam lParam
 		selectFont dc oldFont
 		endPaint wnd ps
 		return 0
+	| msg == wM_SETFOCUS	= do
+		Just hdl <- readIORef ref
+		setFocus hdl
+		return 0
 	| msg == wM_CLOSE	= exitSuccess
 	| otherwise		= defWindowProc (Just wnd) msg wParam lParam
 
