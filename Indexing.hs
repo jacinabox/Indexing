@@ -146,7 +146,12 @@ indexDirectory dir logicalDir idx = catch (do
 	(\(er :: IOError) -> putStrLn (":::" ++ show er))
 
 readDict idx
-	| isPair idx	= liftM4 (\k v m1 m2 -> insert k v (union m1 m2)) (nth 0 idx >>= decodeString) (nth 1 idx >>= toList >>= mapM decodeString) (nth 2 idx >>= readDict) (nth 3 idx >>= readDict)
+	| isPair idx	= do
+		k <- nth 0 idx >>= decodeString
+		v <- nth 1 idx >>= toList >>= mapM decodeString
+		m1 <- nth 2 idx >>= readDict
+		m2 <- nth 3 idx >>= readDict
+		return $! insert k v (union m1 m2)
 	| otherwise	= return empty
 
 writeDict idx [] = newInt idx 0
@@ -194,7 +199,7 @@ max' f x1 x2
 
 -- The use of unsafePerformIO is justified by the fact that we are
 -- only doing reads and the index is unlikely to change.
-lookIdx k k2 idx = concat $ unsafePerformIO $ dlookup cmpr k k2 idx >>= mapM (\x -> toList x >>= mapM decodeString)
+lookIdx k k2 idx = concat $ unsafePerformIO $ first idx >>= dlookup cmpr k k2 >>= mapM (\x -> toList x >>= mapM decodeString)
 
 look keyword idx = do
 		window <- map (\n -> max' length (drop n keyword) (reverse (take n keyword))) [0..4]
