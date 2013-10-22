@@ -100,6 +100,7 @@ getPtr (Cons _ i)
 	| i < 0		= error $ "getPtr: not a pointer: " ++ show i
 #endif
 	| otherwise	= i
+{-# INLINE getPtr #-}
 
 setFirst c@(Cons hdl i) (Cons hdl2 j)
 #ifdef DEBUG
@@ -125,33 +126,16 @@ list [x] = newCons x (newInt x 0)
 list (x:xs) = newCons x (list xs)
 
 toList = rec [] where
-	rec acc cons = if not (isPair cons) then
-			return (reverse acc)
-		else do
+	rec acc cons = if isPair cons then
+		do
 		x <- first cons
 		s <- second cons
-		if not (isPair s) then
-			return (reverse (x : acc))
-		else do
-		y <- first s
-		s <- second s
-		if not (isPair s) then
-			return (reverse (y : x : acc))
-		else do
-		z <- first s
-		s <- second s
-		if not (isPair s) then
-			return (reverse (z : y : x : acc))
-		else do
-		a <- first s
-		s <- second s
-		rec (a : z : y : x : acc) s
+		rec (x : acc) s
+		else
+			return (reverse acc)
 
 nth 0 cons = first cons
-nth 1 cons = second cons >>= first
-nth 2 cons = second cons >>= second >>= first
-nth 3 cons = second cons >>= second >>= second >>= first
-nth n cons = second cons >>= second >>= second >>= second >>= nth (n - 4)
+nth n cons = second cons >>= nth (n - 1)
 {-# INLINE nth #-}
 
 padWithZeros s = s ++ replicate (3 - length s `mod` 3) '\0'

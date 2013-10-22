@@ -52,11 +52,11 @@ addChunkToIndex logicalName idx add = do
 	mp <- readIORef idx
 	let ls = maybe [] id (lookup add mp)
 	when (logicalName `notElem` ls) $
-		modifyIORef' idx (insert add (logicalName : ls))
+		writeIORef idx $! insert add (logicalName : ls) mp
 	mp <- readIORef idx
 	let ls = maybe [] id (lookup (reverse add) mp)
 	when (logicalName `notElem` ls) $
-		modifyIORef' idx (insert (reverse add) (logicalName : ls))
+		writeIORef idx $! insert (reverse add) (logicalName : ls) mp
 {-# INLINE addChunkToIndex #-}
 
 {-dlookup k k2 mp = maybeToList (lookup k mp) ++ map snd (takeWhile ((<=k2) . fst) (assocs r))
@@ -112,12 +112,13 @@ index name logicalName idx = catch (do
 		hClose fl)
 	(\(er :: IOError) -> putStrLn (":::" ++ show er))
 
-details1 name logicalName idx code = maybe
+details1 name logicalName idx code = catch (maybe
 	code
 	(\f -> do
 		unpacked <- f name
 		indexDirectory unpacked (logicalName ++ "@") idx)
-	(Data.List.lookup (takeExtension name) unpacks)
+	(Data.List.lookup (takeExtension name) unpacks))
+	(\(er :: IOError) -> putStrLn $ ":::" ++ show er)
 
 details2 name code = do
 	userdata <- getAppUserDataDirectory "Index"
@@ -157,7 +158,7 @@ readDict dict idx
 				Just s -> return s
 				Nothing -> do
 					s <- decodeString x
-					modifyIORef' dict (insert (getPtr x) s)
+					writeIORef dict $! insert (getPtr x) s mp
 					return s)
 		m1 <- nth 2 idx >>= readDict dict
 		m2 <- nth 3 idx >>= readDict dict
