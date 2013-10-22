@@ -201,15 +201,18 @@ dlookup cmp k k2 t
 			GT -> nth 3 t >>= dlookup cmp k k2
 	| otherwise	= return []
 
-lookupSingle cmp k t
-	| isPair t	= do
-		f <- first t
+lookupSingle cmp k t = do
+	referent <- first t
+	if isPair referent then
+		do
+		f <- first referent
 		ord <- cmp k f
 		case ord of
-			LT -> nth 2 t >>= lookupSingle cmp k
-			EQ -> liftM Just (nth 1 t)
-			GT -> nth 3 t >>= lookupSingle cmp k
-	| otherwise	= return Nothing
+			LT -> second referent >>= second >>= lookupSingle cmp k
+			EQ -> return t 
+			GT -> second referent >>= second >>= second >>= lookupSingle cmp k
+		else
+			return t
 
 insert cmp kx x t = do
 	referent <- first t

@@ -46,12 +46,8 @@ indexFileName = do
 	return (dir ++ pathDelimiter : "Index.dat")
 
 addChunkToIndex logicalName nm idx add = do
-	(ls, existing) <- lookIdxSingle add idx
-	when (logicalName `notElem` ls) $
-		insert cmpr2 (encodeString idx add) (newCons nm existing) idx
-	(ls, existing) <- lookIdxSingle (reverse add) idx
-	when (logicalName `notElem` ls) $
-		insert cmpr2 (encodeString idx (reverse add)) (newCons nm existing) idx
+	insertSingle add logicalName nm idx
+	insertSingle (reverse add) logicalName nm idx
 {-# INLINE addChunkToIndex #-}
 
 -- We maintain a distinction between "names" and "logical names," in order
@@ -163,17 +159,15 @@ lookIdxImpl k k2 idx = do
 	liftM concat $ mapM (\x -> toList x >>= mapM decodeString) ls
 {-# INLINE lookIdxImpl #-}
 
--- Returns a pair of the files associated with the element and the
--- raw Cons associated with k, for adding onto.
-lookIdxSingle k idx = do
-	f <- first idx
-	may <- lookupSingle cmpr k f
-	case may of
-		Just x -> do
-			converted <- toList x >>= mapM decodeString
-			return (converted, x)
-		Nothing -> return ([], newInt idx 0)
-{-# INLINE lookIdxSingle #-}
+insertSingle k v ins idx = do
+	cons <- lookupSingle cmpr k idx
+	f <- first cons
+	if isPair f then do
+		x <- nth 1 f
+		insert cmpr2 (encodeString idx k) (newCons ins x) cons
+	else
+		insert cmpr2 (encodeString idx k) (list [ins]) cons
+{-# INLINE insertSingle #-}
 
 -- A pure version of lookIdxImpl. Its use is justified by the fact that we
 -- are doing queries only, so the contents of the index are unlikely to change.
