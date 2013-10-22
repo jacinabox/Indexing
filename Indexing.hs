@@ -1,14 +1,15 @@
 {-# LANGUAGE ScopedTypeVariables, CPP #-}
 
-module Indexing (indexFileName, index, indexDirectory, fullIndex, lookKeywords, contexts, parseKeywords) where
+module Indexing (indexFileName, indexWrapper, fullIndex, lookKeywords, contexts, parseKeywords) where
 
-import Data.List hiding (union, insert)
+import Data.List hiding (insert, lookup)
+import qualified Data.List
 import Control.Monad
 import System.Directory
 import Data.Char
 import System.IO
 import Data.Array.Unboxed (UArray)
-import Data.Array.IArray hiding (index)
+import Data.Array.IArray hiding (index, assocs)
 import Data.Function
 import System.Environment
 import Data.IORef
@@ -16,10 +17,10 @@ import System.Process
 import System.FilePath
 import Control.Exception
 import Data.Maybe
-import Prelude hiding (catch)
-import FileCons
+import Data.Map hiding (filter, map, null, findIndex)
+import Prelude hiding (catch, lookup)
 import Replace
-import Split
+import qualified Split
 import System.IO.Error
 import System.IO.Unsafe
 
@@ -45,14 +46,19 @@ indexFileName = do
 	createDirectoryIfMissing False dir
 	return (dir ++ pathDelimiter : "Index.dat")
 
-addChunkToIndex logicalName nm idx add = do
-	(ls, existing) <- lookIdxSingle add idx
+addChunkToIndex logicalName idx add = do
+	mp <- readIORef idx
+	let ls = lookup add mp
 	when (logicalName `notElem` ls) $
-		insert cmpr2 (encodeString idx add) (newCons nm existing) idx
-	(ls, existing) <- lookIdxSingle (reverse add) idx
+		modifyIORef' idx (insert add (logicalName : ls))
+	mp <- readIORef idx
+	let ls = lookup (reverse add) mp
 	when (logicalName `notElem` ls) $
-		insert cmpr2 (encodeString idx (reverse add)) (newCons nm existing) idx
+		modifyIORef' idx (insert (reverse add) (logicalName : ls))
 {-# INLINE addChunkToIndex #-}
+
+{-dlookup k k2 mp = maybeToList (lookup k mp) ++ map snd (takeWhile ((<=k2) . fst) (assocs r))
+	where (_, r) = split k mp-}
 
 -- We maintain a distinction between "names" and "logical names," in order
 -- to handle files that have been unpacked from archives. The logical names
@@ -60,15 +66,12 @@ addChunkToIndex logicalName nm idx add = do
 -- separated by @s. The other names are the places where you find the
 -- temporary files that resulted from unpacking.
 
-index name logicalName = catch (do
+index name logicalName idx = catch (do
 	putStrLn name
-	idxNm <- indexFileName
-	idx <- openHandle idxNm ReadWriteMode
-	let nm = encodeString idx logicalName
 
 	-- Adding the file's name to the index.
 	mapM_
-		(addChunkToIndex logicalName nm idx)
+		(addChunkToIndex logicalName idx)
 		(indexAddition (takeFileName name))
 
 	-- Checks to see if the file is binary. If so, we skip it.
@@ -99,21 +102,20 @@ index name logicalName = catch (do
 			c3 <- hGetChar fl
 			c4 <- hGetChar fl
 			c5 <- hGetChar fl
-			addChunkToIndex logicalName nm idx (toUpperCase [c1, c2, c3, c4, c5])
+			addChunkToIndex logicalName idx (toUpperCase [c1, c2, c3, c4, c5])
 			loop (n - 5)
 		loop (fromInteger sz)
 		remaining <- hGetContents fl
-		addChunkToIndex logicalName nm idx (toUpperCase remaining ++ replicate (5 - length remaining) ' ')
-		hClose fl
-	closeHandle idx)
+		addChunkToIndex logicalName idx (toUpperCase remaining ++ replicate (5 - length remaining) ' ')
+		hClose fl)
 	(\(er :: IOError) -> putStrLn (":::" ++ show er))
 
-details1 name logicalName code = maybe
+details1 name logicalName idx code = maybe
 	code
 	(\f -> do
 		unpacked <- f name
-		indexDirectory unpacked (logicalName ++ "@"))
-	(lookup (takeExtension name) unpacks)
+		indexDirectory unpacked (logicalName ++ "@") idx)
+	(Data.List.lookup (takeExtension name) unpacks)
 
 details2 name code = do
 	userdata <- getAppUserDataDirectory "Index"
@@ -128,25 +130,36 @@ details2 name code = do
 -- index the directory. (There is a special case when a file is an
 -- unpackable archive, in which case we do the unpacking, then start
 -- indexing the resulting /temporary directory/.)
-indexDirectory dir logicalDir = catch (do
+indexDirectory dir logicalDir idx = catch (do
 	contents <- getDirectoryContents dir
 	mapM_ (\nm -> let name = dir ++ nm in
 		let logicalName = logicalDir ++ nm in
 		unless (nm == "." || nm == "..") $ do
 		b <- doesFileExist name
 		if b then
-				details1 name logicalName {-Primary control flow:-}(index name logicalName)
+				details1 name logicalName idx {-Primary control flow:-}(index name logicalName idx)
 			else
-				details2 name {-Primary control flow:-}(indexDirectory (name ++ [pathDelimiter]) (logicalName ++ [pathDelimiter])))
+				details2 name {-Primary control flow:-}(indexDirectory (name ++ [pathDelimiter]) (logicalName ++ [pathDelimiter]) idx))
 		contents)
 	(\(er :: IOError) -> putStrLn (":::" ++ show er))
+
+indexWrapper dir = do
+	idxNm <- indexFileName
+	idxVal <- catch (do
+		fl <- readFile idxNm
+		return (read fl))
+		(\(_ :: IOError) -> return empty)
+	idx <- newIORef idxVal
+	indexDirectory dir dir idx
+	idxVal <- readIORef idx
+	writeFile idxNm (show idxVal)
 
 #ifdef WIN32
 fullIndex = do
 	letters <- readProcess "driveletters.exe" [] ""
-	mapM_ (\dir -> indexDirectory dir dir) (lines letters)
+	mapM_ indexWrapper (lines letters)
 #else
-fullIndex = indexDirectory "/" "/"
+fullIndex = indexWrapper "/"
 #endif
 
 intersects ls = foldl1 intersect ls
@@ -154,34 +167,13 @@ intersects ls = foldl1 intersect ls
 -- The process of doing a keyword search:
 --   lookKeywords deals with all the keywords the user has entered,
 --   look deals with a single keyword, breaking it up into 5-letter pieces.
---   lookIdx searches for a single 5-letter piece in the index.
-
--- Returns all the files associated with the given key range.
-lookIdxImpl k k2 idx = do
-	f <- first idx
-	ls <- dlookup cmpr k k2 f
-	liftM concat $ mapM (\x -> toList x >>= mapM decodeString) ls
-{-# INLINE lookIdxImpl #-}
-
--- Returns a pair of the files associated with the element and the
--- raw Cons associated with k, for adding onto.
-lookIdxSingle k idx = do
-	f <- first idx
-	may <- lookupSingle cmpr k f
-	case may of
-		Just x -> do
-			converted <- toList x >>= mapM decodeString
-			return (converted, x)
-		Nothing -> return ([], newInt idx 0)
-{-# INLINE lookIdxSingle #-}
-
--- A pure version of lookIdxImpl. Its use is justified by the fact that we
--- are doing queries only, so the contents of the index are unlikely to change.
-lookIdx k k2 idx = unsafePerformIO (lookIdxImpl k k2 idx)
+--   lookIdx searches for a single 5-letter string in the index.
 
 max' f x1 x2
 	| f x1 > f x2	= x1
 	| otherwise	= x2
+
+lookIdx k k2 idx = concat $ dlookup k k2 idx
 
 look keyword idx = do
 		window <- map (\n -> max' length (drop n keyword) (reverse (take n keyword))) [0..4]
@@ -192,9 +184,9 @@ look keyword idx = do
 			[]
 
 extractText name = do
-	let paths = split '@' name
+	let paths = Split.split '@' name
 	finalPath <- foldM
-		(\path logicalPath -> liftM (++logicalPath) (fromJust (lookup (takeExtension path) unpacks) path))
+		(\path logicalPath -> liftM (++logicalPath) (fromJust (Data.List.lookup (takeExtension path) unpacks) path))
 		(head paths)
 		(tail paths)
 	readFile finalPath
@@ -204,13 +196,13 @@ extractText name = do
 -- in the texts of the files.
 lookKeywords keywords caseSensitive = do
 	idxNm <- indexFileName
+	fl <- readFile idxNm 
+	let idx = read fl
 	let longKeywords = filter ((>=5) . length) keywords
-	idx <- openHandle idxNm ReadMode
 	let possibilities = nub $ intersects $ map ((`look` idx) . toUpperCase)
 		$ if null longKeywords then keywords else longKeywords
 	texts <- mapM (\nm -> liftM (\str -> (nm, str)) (extractText nm))
 		possibilities
-	closeHandle idx
 	let caseFunction = if caseSensitive then id else toUpperCase
 	let keywords2 = map caseFunction keywords
 	return $ filter

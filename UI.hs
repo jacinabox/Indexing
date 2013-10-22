@@ -229,7 +229,7 @@ main = do
 			fullIndex
 		else do
 			dir <- canonicalizePath (args !! 1)
-			indexDirectory dir dir
+			indexWrapper dir
 	else if null keywords then
 		winMain
 	else do
