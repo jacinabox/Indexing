@@ -91,6 +91,7 @@ wndProc ref resultsRef sortRef scrollRef wnd msg wParam lParam
 				drawMessage wnd
 				Just txt <- readIORef ref
 				s <- getWindowText txt
+				setWindowText wnd (s ++ " - Desktop Search")
 				let keywords = filter ((>2) . length) (parseKeywords s)
 				if null keywords then
 						writeIORef resultsRef ([], 0)

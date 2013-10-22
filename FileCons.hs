@@ -1,6 +1,6 @@
 {-# LANGUAGE CPP, ScopedTypeVariables #-}
 
-module FileCons (Cons, openHandle, closeHandle, newCons, newInt, isPair, first, second, setFirst, setSecond, int, list, toList, nth, shw, cmpr, cmpr2, encodeString, decodeString, dlookup, insert, deleteFindMin, deleteFindMax, delete, depth, size) where
+module FileCons (Cons, openHandle, closeHandle, newCons, newInt, isPair, first, second, setFirst, setSecond, int, list, toList, nth, shw, cmpr, cmpr2, encodeString, decodeString, dlookup, lookupSingle, insert, deleteFindMin, deleteFindMax, delete, depth, size) where
 
 import System.IO.Unsafe
 import Control.Monad
@@ -18,20 +18,17 @@ import Prelude hiding (catch)
 -- conses. The value in the file can be changed while sharing structure with values
 -- that were once in the file.
 
-hReadInt :: Handle -> IO Int
-hReadInt hdl = do
-	for <- mallocForeignPtr
-	withForeignPtr for $ \p -> do
-		hGetBuf hdl (castPtr p) 4
-		peek p
+intBuffer :: ForeignPtr Int
+intBuffer = unsafePerformIO mallocForeignPtr
+{-# NOINLINE intBuffer #-}
 
-hWriteInt :: Handle -> Int -> IO ()
-hWriteInt hdl n = do
-	for <- mallocForeignPtr
-	withForeignPtr for $ \p -> do
-		poke p n
-		hPutBuf hdl (castPtr p) 4
-	return ()
+hReadInt hdl = withForeignPtr intBuffer $ \p -> do
+	hGetBuf hdl (castPtr p) 4
+	peek p
+
+hWriteInt hdl n = withForeignPtr intBuffer $ \p -> do
+	poke p n
+	hPutBuf hdl (castPtr p) 4
 
 data Cons = Cons !Handle !Int deriving Eq
 
@@ -122,16 +119,34 @@ list [x] = newCons x (newInt x 0)
 list (x:xs) = newCons x (list xs)
 
 toList = rec [] where
-	rec acc cons = if isPair cons then
-		do	
-			x <- first cons
-			s <- second cons
-			rec (x : acc) s
-		else
+	rec acc cons = if not (isPair cons) then
 			return (reverse acc)
+		else do
+		x <- first cons
+		s <- second cons
+		if not (isPair s) then
+			return (reverse (x : acc))
+		else do
+		y <- first s
+		s <- second s
+		if not (isPair s) then
+			return (reverse (y : x : acc))
+		else do
+		z <- first s
+		s <- second s
+		if not (isPair s) then
+			return (reverse (z : y : x : acc))
+		else do
+		a <- first s
+		s <- second s
+		rec (a : z : y : x : acc) s
 
 nth 0 cons = first cons
-nth n cons = second cons >>= nth (n - 1)
+nth 1 cons = second cons >>= first
+nth 2 cons = second cons >>= second >>= first
+nth 3 cons = second cons >>= second >>= second >>= first
+nth n cons = second cons >>= second >>= second >>= second >>= nth (n - 4)
+{-# INLINE nth #-}
 
 padWithZeros s = s ++ replicate (3 - length s `mod` 3) '\0'
 {-# INLINE padWithZeros #-}
@@ -185,6 +200,16 @@ dlookup cmp k k2 t
 					GT -> liftM (val:) (nth 3 t >>= dlookup cmp k k2)
 			GT -> nth 3 t >>= dlookup cmp k k2
 	| otherwise	= return []
+
+lookupSingle cmp k t
+	| isPair t	= do
+		f <- first t
+		ord <- cmp k f
+		case ord of
+			LT -> nth 2 t >>= lookupSingle cmp k
+			EQ -> liftM Just (nth 1 t)
+			GT -> nth 3 t >>= lookupSingle cmp k
+	| otherwise	= return Nothing
 
 insert cmp kx x t = do
 	referent <- first t
