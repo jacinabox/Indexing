@@ -155,12 +155,13 @@ readDict idx
 	| otherwise	= return empty
 
 writeDict idx [] = newInt idx 0
-writeDict idx ls = list [encodeString idx k, list (map (encodeString idx) v), writeDict idx fs, writeDict idx sn]
+writeDict idx ls = list [encodeString idx k, list v, writeDict idx fs, writeDict idx sn]
 	where
 		fs = take (length ls `div` 2) ls
 		(k, v):sn = drop (length ls `div` 2) ls
 
 indexWrapper dir = do
+	-- Reads the listing from the index
 	idxNm <- indexFileName
 	idxVal <- catch (do
 		idx <- openHandle idxNm ReadMode
@@ -170,12 +171,29 @@ indexWrapper dir = do
 		return idxVal)
 		(\(_ :: IOError) -> return empty)
 
+	-- Indexes the directory.
 	idx <- newIORef idxVal
 	indexDirectory dir dir idx
 	idxVal <- readIORef idx
 
+	-- Compresses the index by creating a single string for each path.
 	idx <- openHandle idxNm WriteMode
-	setFirst idx (writeDict idx (assocs idxVal))
+	names <- newIORef empty
+	ascs <- mapM
+		(\(k, ls) -> liftM ((,) k) $ mapM
+			(\x -> do
+				namesVal <- readIORef names
+				case lookup x namesVal of
+					Just cons -> return cons
+					Nothing -> do
+						let y = encodeString idx x
+						writeIORef names $! insert x y namesVal
+						return y)
+			ls)
+		(assocs idxVal)
+
+	-- Saves the index.
+	setFirst idx (writeDict idx ascs)
 	closeHandle idx
 
 #ifdef WIN32
