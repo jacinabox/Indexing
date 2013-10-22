@@ -1,6 +1,6 @@
 {-# LANGUAGE CPP, ScopedTypeVariables #-}
 
-module FileCons (Cons, openHandle, closeHandle, newCons, newInt, isPair, first, second, setFirst, setSecond, int, list, toList, nth, shw, cmpr, cmpr2, encodeString, decodeString, dlookup, lookupSingle, dinsert, deleteFindMin, deleteFindMax, delete, depth, size) where
+module FileCons (Cons, openHandle, closeHandle, newCons, newInt, isPair, first, second, setFirst, setSecond, int, getPtr, list, toList, nth, shw, cmpr, cmpr2, encodeString, decodeString, dlookup, lookupSingle, dinsert, deleteFindMin, deleteFindMax, delete, depth, size) where
 
 import System.IO.Unsafe
 import Control.Monad
@@ -94,6 +94,12 @@ int c@(Cons hd i)
 #endif
 	| otherwise	= -(i + 1)
 {-# INLINE int #-}
+
+getPtr (Cons _ i)
+#ifdef DEBUG
+	| i < 0		= error $ "getPtr: not a pointer: " ++ show i
+#endif
+	| otherwise	= i
 
 setFirst c@(Cons hdl i) (Cons hdl2 j)
 #ifdef DEBUG

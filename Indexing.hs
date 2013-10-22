@@ -145,12 +145,22 @@ indexDirectory dir logicalDir idx = catch (do
 		contents)
 	(\(er :: IOError) -> putStrLn (":::" ++ show er))
 
-readDict idx
+readDict dict idx
 	| isPair idx	= do
 		k <- nth 0 idx >>= decodeString
-		v <- nth 1 idx >>= toList >>= mapM decodeString
-		m1 <- nth 2 idx >>= readDict
-		m2 <- nth 3 idx >>= readDict
+		v <- nth 1 idx >>= toList >>= mapM (\x -> do
+			-- This maintains a dictionary of strings to reduce duplication. When
+			-- a Cons shows up in the dictionary, we use the string that was
+			-- originally saved there.
+			mp <- readIORef dict
+			case lookup (getPtr x) mp of
+				Just s -> return s
+				Nothing -> do
+					s <- decodeString x
+					modifyIORef' dict (insert (getPtr x) s)
+					return s)
+		m1 <- nth 2 idx >>= readDict dict
+		m2 <- nth 3 idx >>= readDict dict
 		return $! insert k v (union m1 m2)
 	| otherwise	= return empty
 
@@ -161,12 +171,13 @@ writeDict idx ls = list [encodeString idx k, list v, writeDict idx fs, writeDict
 		(k, v):sn = drop (length ls `div` 2) ls
 
 indexWrapper dir = do
-	-- Reads the listing from the index
+	-- Reads the listing from the index.
 	idxNm <- indexFileName
 	idxVal <- catch (do
 		idx <- openHandle idxNm ReadMode
 		f <- first idx
-		idxVal <- readDict f
+		dict <- newIORef empty
+		idxVal <- readDict dict f
 		closeHandle idx
 		return idxVal)
 		(\(_ :: IOError) -> return empty)
@@ -176,7 +187,7 @@ indexWrapper dir = do
 	indexDirectory dir dir idx
 	idxVal <- readIORef idx
 
-	-- Compresses the index by creating a single string for each path.
+	-- Again, reduces duplication by keeping a dictionary of strings.
 	idx <- openHandle idxNm WriteMode
 	names <- newIORef empty
 	ascs <- mapM
