@@ -15,7 +15,7 @@ An overview of the components of this project:
 
 To build the Haskell part of the application, use
 
-ghc UI.hs -o Index -O2 -DWIN32 -threaded +RTS -N
+ghc UI.hs -o Index -O2 -DWIN32
 
 Hard problems to solve with this project:
 
