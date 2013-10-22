@@ -2,7 +2,7 @@
 
 module Indexing (indexFileName, indexWrapper, fullIndex, lookKeywords, contexts, parseKeywords) where
 
-import Data.List hiding (insert, lookup)
+import Data.List hiding (insert, lookup, union)
 import qualified Data.List
 import Control.Monad
 import System.Directory
@@ -17,7 +17,7 @@ import System.Process
 import System.FilePath
 import Control.Exception
 import Data.Maybe
-import Data.Map hiding (filter, map, null, findIndex)
+import Data.Map (insert, lookup, union, empty, assocs)
 import qualified Data.Map as Map
 import Prelude hiding (catch, lookup)
 import Replace
@@ -50,11 +50,11 @@ indexFileName = do
 
 addChunkToIndex logicalName idx add = do
 	mp <- readIORef idx
-	let ls = lookup add mp
+	let ls = maybe [] id (lookup add mp)
 	when (logicalName `notElem` ls) $
 		modifyIORef' idx (insert add (logicalName : ls))
 	mp <- readIORef idx
-	let ls = lookup (reverse add) mp
+	let ls = maybe [] id (lookup (reverse add) mp)
 	when (logicalName `notElem` ls) $
 		modifyIORef' idx (insert (reverse add) (logicalName : ls))
 {-# INLINE addChunkToIndex #-}
@@ -146,12 +146,14 @@ indexDirectory dir logicalDir idx = catch (do
 	(\(er :: IOError) -> putStrLn (":::" ++ show er))
 
 readDict idx
-	| isPair idx	= liftM4 (\k v m1 m2 -> insert k v (union m1 m2)) (nth 0 idx) (nth 1 idx) (nth 2 idx >>= readDict) (nth 3 idx >>= readDict)
+	| isPair idx	= liftM4 (\k v m1 m2 -> insert k v (union m1 m2)) (nth 0 idx >>= decodeString) (nth 1 idx >>= toList >>= mapM decodeString) (nth 2 idx >>= readDict) (nth 3 idx >>= readDict)
 	| otherwise	= return empty
 
-writeDict idx mp
-	| M.null mp	= return idx
-	| otherwise	= 
+writeDict idx [] = newInt idx 0
+writeDict idx ls = list [encodeString idx k, list (map (encodeString idx) v), writeDict idx fs, writeDict idx sn]
+	where
+		fs = take (length ls `div` 2) ls
+		(k, v):sn = drop (length ls `div` 2) ls
 
 indexWrapper dir = do
 	idxNm <- indexFileName
@@ -159,7 +161,8 @@ indexWrapper dir = do
 		idx <- openHandle idxNm ReadMode
 		f <- first idx
 		idxVal <- readDict f
-		closeHandle idx)
+		closeHandle idx
+		return idxVal)
 		(\(_ :: IOError) -> return empty)
 
 	idx <- newIORef idxVal
@@ -167,7 +170,7 @@ indexWrapper dir = do
 	idxVal <- readIORef idx
 
 	idx <- openHandle idxNm WriteMode
-	setFirst idx (writeDict idx idxVal)
+	setFirst idx (writeDict idx (assocs idxVal))
 	closeHandle idx
 
 #ifdef WIN32
@@ -189,7 +192,10 @@ max' f x1 x2
 	| f x1 > f x2	= x1
 	| otherwise	= x2
 
-lookIdx k k2 idx = concat $ unsafePerformIO $ dlookup k k2 idx
+-- The use of unsafePerformIO is justified by the fact that we are
+-- only doing reads and the index is unlikely to change.
+lookIdx :: String -> String -> Cons -> [String]
+lookIdx k k2 idx = concat $ unsafePerformIO $ dlookup cmpr k k2 idx >>= mapM (\x -> toList x >>= mapM decodeString)
 
 look keyword idx = do
 		window <- map (\n -> max' length (drop n keyword) (reverse (take n keyword))) [0..4]

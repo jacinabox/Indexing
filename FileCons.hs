@@ -1,6 +1,6 @@
 {-# LANGUAGE CPP, ScopedTypeVariables #-}
 
-module FileCons (Cons, openHandle, closeHandle, newCons, newInt, isPair, first, second, setFirst, setSecond, int, list, toList, nth, shw, cmpr, cmpr2, encodeString, decodeString, dlookup, lookupSingle, insert, deleteFindMin, deleteFindMax, delete, depth, size) where
+module FileCons (Cons, openHandle, closeHandle, newCons, newInt, isPair, first, second, setFirst, setSecond, int, list, toList, nth, shw, cmpr, cmpr2, encodeString, decodeString, dlookup, lookupSingle, dinsert, deleteFindMin, deleteFindMax, delete, depth, size) where
 
 import System.IO.Unsafe
 import Control.Monad
@@ -211,14 +211,14 @@ lookupSingle cmp k t
 			GT -> nth 3 t >>= lookupSingle cmp k
 	| otherwise	= return Nothing
 
-insert cmp kx x t = do
+dinsert cmp kx x t = do
 	referent <- first t
 	if isPair referent then do	
 		val <- first referent
 		ord <- cmp kx val
 		case ord of
-			LT -> second referent >>= second >>= insert cmp kx x
-			GT -> second referent >>= second >>= second >>= insert cmp kx x
+			LT -> second referent >>= second >>= dinsert cmp kx x
+			GT -> second referent >>= second >>= second >>= dinsert cmp kx x
 			EQ -> do
 				second referent >>= \s -> setFirst s x
 	else
