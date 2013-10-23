@@ -27,13 +27,6 @@ foreign import stdcall "windows.h GetWindowTextW" c_GetWindowText :: HWND -> LPT
 
 foreign import stdcall "windows.h SetFocus" setFocus :: HWND -> IO HWND
 
-trackPopupMenu' :: HMENU -> TrackMenuFlag -> Int -> Int -> HWND -> RECT -> IO Int32
-trackPopupMenu' menu flags x y wnd rect =
-  withRECT rect $ \ p_rect ->
-  c_TrackPopupMenu' menu flags x y 0 wnd p_rect
-foreign import stdcall "windows.h TrackPopupMenu"
-  c_TrackPopupMenu' :: HMENU -> TrackMenuFlag -> Int -> Int -> Int -> HWND -> LPRECT -> IO Int32
-
 getWindowText wnd = do
 	ptr <- mallocForeignPtrBytes 1000
 	withForeignPtr ptr $ \p -> do
@@ -59,8 +52,6 @@ gWLP_ID = -12
 gWLP_WNDPROC = -4
 
 wM_MOUSEWHEEL = 522
-
-mIIM_STRING = 64
 
 btnId = 10
 
@@ -112,7 +103,7 @@ hitTest y resultsRef scrollRef = do
 wndProc :: IORef (Maybe (HWND, HWND)) -> IORef ([(String, [String])], Int32) -> IORef Sort -> IORef Int32 -> HWND -> UINT -> WPARAM -> LPARAM -> IO LRESULT
 wndProc ref resultsRef sortRef scrollRef wnd msg wParam lParam
 	| msg == wM_COMMAND && loWord (fromIntegral wParam) == btnId	= do
-				-- Do a hit test on the control's position to determine which folder to open.
+		-- Do a hit test on the control's position to determine which folder to open.
 		do
 		Just (_, btn) <- readIORef ref
 		(_, _, _, y) <- getWindowRect btn
@@ -228,18 +219,6 @@ wndProc ref resultsRef sortRef scrollRef wnd msg wParam lParam
 		return 0
 	| msg == wM_CLOSE	= exitSuccess
 	| otherwise		= defWindowProc (Just wnd) msg wParam lParam
-
-dLGC_HASSETSEL :: Int32
-dLGC_HASSETSEL = 8
-
-dLGC_UNDEFPUSHBUTTON :: Int32
-dLGC_UNDEFPUSHBUTTON = 32
-
-dLGC_WANTARROWS :: Int32
-dLGC_WANTARROWS = 1
-
-dLGC_WANTCHARS :: Int32
-dLGC_WANTCHARS = 128
 
 txtProc parent proc wnd msg wParam lParam
 	| msg == wM_KEYDOWN && (wParam == vK_RETURN || wParam == vK_UP || wParam == vK_DOWN)
