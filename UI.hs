@@ -111,18 +111,18 @@ hitTest y resultsRef scrollRef = do
 
 wndProc :: IORef (Maybe (HWND, HWND)) -> IORef ([(String, [String])], Int32) -> IORef Sort -> IORef Int32 -> HWND -> UINT -> WPARAM -> LPARAM -> IO LRESULT
 wndProc ref resultsRef sortRef scrollRef wnd msg wParam lParam
-	| msg == wM_COMMAND && loWord (fromIntegral wParam) == btnId	=
+	| msg == wM_COMMAND && loWord (fromIntegral wParam) == btnId	= do
 				-- Do a hit test on the control's position to determine which folder to open.
-				do
-				Just (_, btn) <- readIORef ref
-				(_, _, _, y) <- getWindowRect btn
-				i <- hitTest y resultsRef scrollRef
-				(res, _) <- readIORef resultsRef
-				when (i < fromIntegral (length res)) $ do
-					print "Command"
-					createProcess (proc "explorer" [takeDirectory $ head $ split '@' $ fst $ res !! fromIntegral i])
-					return ()
-				return 0
+		do
+		Just (_, btn) <- readIORef ref
+		(_, _, _, y) <- getWindowRect btn
+		(_, y) <- screenToClient wnd (0, y)
+		i <- hitTest y resultsRef scrollRef
+		(res, _) <- readIORef resultsRef
+		when (i < fromIntegral (length res)) $ do
+			createProcess (proc "explorer" [takeDirectory $ head $ split '@' $ fst $ res !! fromIntegral i])
+			return ()
+		return 0
 	| msg == wM_USER	= do
 		Just (txt, btn) <- readIORef ref
 		showWindow btn sW_HIDE
