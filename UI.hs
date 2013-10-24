@@ -104,6 +104,7 @@ quote s = '"' : s ++ "\""
 
 wndProc :: IORef (Maybe (HWND, HWND)) -> IORef ([(String, [String])], Int32) -> IORef Sort -> IORef Int32 -> HWND -> UINT -> WPARAM -> LPARAM -> IO LRESULT
 wndProc ref resultsRef sortRef scrollRef wnd msg wParam lParam
+	-- Handlers for commands involving individual results
 	| msg == wM_COMMAND && loWord (fromIntegral wParam) == btnId	= do
 		-- Do a hit test on the control's position to determine which folder to open.
 		do
@@ -116,6 +117,26 @@ wndProc ref resultsRef sortRef scrollRef wnd msg wParam lParam
 			createProcess (proc "explorer" [takeDirectory $ head $ split '@' $ fst $ res !! fromIntegral i])
 			return ()
 		return 0
+	| msg == wM_LBUTTONUP	= do
+		(res, _) <- readIORef resultsRef
+		i <- hitTest (hiWord lParam) resultsRef scrollRef
+		when (i < fromIntegral (length res)) $ do
+			createProcess (shell $ quote $ head $ split '@' $ fst $ res !! fromIntegral i)
+			return ()
+		return 0
+	| msg == wM_MOUSEMOVE	= do
+		(res, nKeywords) <- readIORef resultsRef
+		scroll <- readIORef scrollRef
+		i <- hitTest (hiWord lParam) resultsRef scrollRef
+		when (i < fromIntegral (length res)) $ do
+			(_, _, x, y) <- getClientRect wnd
+			Just (_, btn) <- readIORef ref
+			moveWindow btn (fromIntegral (x - btnWidth - pad)) (fromIntegral $ screenCoord i nKeywords scroll + pad + 1) (fromIntegral btnWidth) 20 True
+			showWindow btn sW_SHOW
+			return ()
+		return 0
+
+	-- Handlers related to searching and scrolling
 	| msg == wM_USER	= do
 		Just (txt, btn) <- readIORef ref
 		showWindow btn sW_HIDE
@@ -140,24 +161,12 @@ wndProc ref resultsRef sortRef scrollRef wnd msg wParam lParam
 		invalidateRect (Just wnd) Nothing True
 		return 0
 	| msg == wM_MOUSEWHEEL	= sendMessage wnd wM_USER (if hiWord (fromIntegral wParam) > 0 then vK_UP else vK_DOWN) 0
-	| msg == wM_LBUTTONUP	= do
-		(res, _) <- readIORef resultsRef
-		i <- hitTest (hiWord lParam) resultsRef scrollRef
-		when (i < fromIntegral (length res)) $ do
-			createProcess (shell $ quote $ head $ split '@' $ fst $ res !! fromIntegral i)
-			return ()
+	| msg == wM_SETFOCUS	= do
+		Just (txt, _) <- readIORef ref
+		setFocus txt
 		return 0
-	| msg == wM_MOUSEMOVE	= do
-		(res, nKeywords) <- readIORef resultsRef
-		scroll <- readIORef scrollRef
-		i <- hitTest (hiWord lParam) resultsRef scrollRef
-		when (i < fromIntegral (length res)) $ do
-			(_, _, x, y) <- getClientRect wnd
-			Just (_, btn) <- readIORef ref
-			moveWindow btn (fromIntegral (x - btnWidth - pad)) (fromIntegral $ screenCoord i nKeywords scroll + pad + 1) (fromIntegral btnWidth) 20 True
-			showWindow btn sW_SHOW
-			return ()
-		return 0
+
+	-- Miscellaneous handlers
 	| msg == wM_SIZE	= do
 		may <- readIORef ref
 		case may of
@@ -214,10 +223,6 @@ wndProc ref resultsRef sortRef scrollRef wnd msg wParam lParam
 
 		selectFont dc oldFont
 		endPaint wnd ps
-		return 0
-	| msg == wM_SETFOCUS	= do
-		Just (txt, _) <- readIORef ref
-		setFocus txt
 		return 0
 	| msg == wM_CLOSE	= exitSuccess
 	| otherwise		= defWindowProc (Just wnd) msg wParam lParam
