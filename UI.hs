@@ -44,9 +44,16 @@ textHeight = 14
 pad :: Int32
 pad = 3
 
+btnWidth :: Int32
+btnWidth = 175
+
+gWLP_ID = -12
+
 gWLP_WNDPROC = -4
 
 wM_MOUSEWHEEL = 522
+
+btnId = 10
 
 subclassProc :: HWND -> (WindowClosure -> WindowClosure) -> IO ()
 subclassProc wnd proc = do
@@ -85,13 +92,34 @@ loWord n = n .&. 32767
 hiWord :: LPARAM -> LPARAM
 hiWord n = shiftR n 16
 
-wndProc :: IORef (Maybe HWND) -> IORef ([(String, [String])], Int32) -> IORef Sort -> IORef Int32 -> HWND -> UINT -> WPARAM -> LPARAM -> IO LRESULT
+screenCoord i nKeywords scroll = ((nKeywords+1)*textHeight+3*pad)*i+textBoxHeight-scroll
+
+hitTest :: LPARAM -> IORef (t, Int32) -> IORef Int32 -> IO Int32
+hitTest y resultsRef scrollRef = do
+	(_, nKeywords) <- readIORef resultsRef
+	scroll <- readIORef scrollRef
+	return $ (y - textBoxHeight + scroll) `div` ((nKeywords+1)*textHeight+3*pad)
+
+wndProc :: IORef (Maybe (HWND, HWND)) -> IORef ([(String, [String])], Int32) -> IORef Sort -> IORef Int32 -> HWND -> UINT -> WPARAM -> LPARAM -> IO LRESULT
 wndProc ref resultsRef sortRef scrollRef wnd msg wParam lParam
+	| msg == wM_COMMAND && loWord (fromIntegral wParam) == btnId	= do
+		-- Do a hit test on the control's position to determine which folder to open.
+		do
+		Just (_, btn) <- readIORef ref
+		(_, _, _, y) <- getWindowRect btn
+		(_, y) <- screenToClient wnd (0, y)
+		i <- hitTest y resultsRef scrollRef
+		(res, _) <- readIORef resultsRef
+		when (i < fromIntegral (length res)) $ do
+			createProcess (proc "explorer" [takeDirectory $ head $ split '@' $ fst $ res !! fromIntegral i])
+			return ()
+		return 0
 	| msg == wM_USER	= do
+		Just (txt, btn) <- readIORef ref
+		showWindow btn sW_HIDE
 		if wParam == vK_RETURN then -- This is where we actually do the search
 				do
 				drawMessage wnd
-				Just txt <- readIORef ref
 				s <- getWindowText txt
 				setWindowText wnd (s ++ " - Desktop Search")
 				let keywords = filter ((>2) . length) (parseKeywords s)
@@ -106,24 +134,36 @@ wndProc ref resultsRef sortRef scrollRef wnd msg wParam lParam
 				modifyIORef' scrollRef (\x -> 0 `max` (x - 100))
 			else do
 				(res, nKeywords) <- readIORef resultsRef
-				modifyIORef' scrollRef (\x -> (((nKeywords+1)*textHeight+3*pad)*fromIntegral (length res)) `min` (x + 100))
+				modifyIORef' scrollRef (\x -> (((nKeywords+1)*textHeight+3*pad)*(fromIntegral (length res)-1)) `min` (x + 100))
 		invalidateRect (Just wnd) Nothing True
 		return 0
 	| msg == wM_MOUSEWHEEL	= sendMessage wnd wM_USER (if hiWord (fromIntegral wParam) > 0 then vK_UP else vK_DOWN) 0
 	| msg == wM_LBUTTONUP	= do
-		(res, nKeywords) <- readIORef resultsRef
-		scroll <- readIORef scrollRef
-		let i = (hiWord lParam - textBoxHeight + scroll) `div` ((nKeywords+1)*textHeight+3*pad)
+		(res, _) <- readIORef resultsRef
+		i <- hitTest (hiWord lParam) resultsRef scrollRef
 		when (i < fromIntegral (length res)) $ do
 			createProcess (shell $ head $ split '@' $ fst $ res !! fromIntegral i)
+			return ()
+		return 0
+	| msg == wM_MOUSEMOVE	= do
+		(res, nKeywords) <- readIORef resultsRef
+		scroll <- readIORef scrollRef
+		i <- hitTest (hiWord lParam) resultsRef scrollRef
+		when (i < fromIntegral (length res)) $ do
+			(_, _, x, y) <- getClientRect wnd
+			Just (_, btn) <- readIORef ref
+			moveWindow btn (fromIntegral (x - btnWidth - pad)) (fromIntegral $ screenCoord i nKeywords scroll + pad + 1) (fromIntegral btnWidth) 20 True
+			showWindow btn sW_SHOW
 			return ()
 		return 0
 	| msg == wM_SIZE	= do
 		may <- readIORef ref
 		case may of
-			Just txt -> do
+			Just (txt, btn) -> do
 				(_, _, x, y) <- getClientRect wnd
 				moveWindow txt 0 0 (fromIntegral x) (fromIntegral textBoxHeight) True
+				showWindow btn sW_HIDE
+				return ()
 			Nothing -> return ()
 		return 0
 	| msg == wM_PAINT	= allocaPAINTSTRUCT $ \ps -> do
@@ -174,23 +214,11 @@ wndProc ref resultsRef sortRef scrollRef wnd msg wParam lParam
 		endPaint wnd ps
 		return 0
 	| msg == wM_SETFOCUS	= do
-		Just hdl <- readIORef ref
-		setFocus hdl
+		Just (txt, _) <- readIORef ref
+		setFocus txt
 		return 0
 	| msg == wM_CLOSE	= exitSuccess
 	| otherwise		= defWindowProc (Just wnd) msg wParam lParam
-
-dLGC_HASSETSEL :: Int32
-dLGC_HASSETSEL = 8
-
-dLGC_UNDEFPUSHBUTTON :: Int32
-dLGC_UNDEFPUSHBUTTON = 32
-
-dLGC_WANTARROWS :: Int32
-dLGC_WANTARROWS = 1
-
-dLGC_WANTCHARS :: Int32
-dLGC_WANTCHARS = 128
 
 txtProc parent proc wnd msg wParam lParam
 	| msg == wM_KEYDOWN && (wParam == vK_RETURN || wParam == vK_UP || wParam == vK_DOWN)
@@ -204,17 +232,21 @@ winMain = do
 	let cls = (0, inst, Nothing, Just cursor, Nothing, Nothing, mkClassName "class")
 	registerClass cls
 	ref <- newIORef Nothing
+	buttonRef <- newIORef Nothing
 	resultsRef <- newIORef ([], 0)
 	sortRef <- newIORef ByPath
 	scrollRef <- newIORef 0
 	wnd <- createWindow (mkClassName "class") "Desktop Search" (wS_VISIBLE .|. wS_OVERLAPPEDWINDOW .|. wS_CLIPCHILDREN) Nothing Nothing Nothing Nothing Nothing Nothing inst (wndProc ref resultsRef sortRef scrollRef)
 	txt <- createWindow (mkClassName "Edit") "" (wS_VISIBLE .|. wS_CHILDWINDOW) (Just 0) (Just 0) (Just 100) (Just 10) (Just wnd) Nothing inst (defWindowProc . Just)
-	writeIORef ref (Just txt)
+	btn <- createWindow (mkClassName "Button") "Open containing folder" wS_CHILDWINDOW (Just 0) (Just 0) (Just 100) (Just 10) (Just wnd) Nothing inst (defWindowProc . Just)
+	writeIORef ref (Just (txt, btn))
+	c_SetWindowLongPtr btn gWLP_ID (unsafeCoerce btnId)
 	subclassProc txt (txtProc wnd)
 	setFocus txt
 	sendMessage wnd wM_SIZE 0 0
 	font <- getStockFont aNSI_VAR_FONT
 	sendMessage txt wM_SETFONT (unsafeCoerce font) 1
+	sendMessage btn wM_SETFONT (unsafeCoerce font) 1
 
 	allocaMessage $ \msg ->
 		let loop = do

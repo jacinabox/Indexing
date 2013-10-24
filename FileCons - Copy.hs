@@ -7,6 +7,7 @@ import Control.Monad
 import Data.Bits
 import Data.Char
 import Foreign.Ptr
+import Foreign.ForeignPtr
 import Foreign.Storable
 import Data.IORef
 import System.IO
@@ -21,17 +22,15 @@ import Prelude hiding (catch)
 data Cons = Cons !FilePath !(IORef (Ptr Int, Int, Int)) !Int deriving Eq
 
 openHandle path = do
-	fl <- openBinaryFile path ReadWriteMode
-	hClose fl
-	(p, sz, _, _) <- mmapFilePtr path ReadWrite Nothing
+	(p, _, sz) <- mmapFileForeignPtr path ReadWrite Nothing
 	ref <- newIORef (p, sz, sz)
 	let cons = Cons path ref 0
 	when (sz == 0) $ newCons (newInt cons 0) (newInt cons 0) `seq` return ()
 	return cons
 
 closeHandle (Cons _ ref _) = do
-	(p, _, sz) <- readIORef ref
-	munmapFilePtr p sz
+	(p, _, _) <- readIORef ref
+	freeForeignPtr p
 
 -- Functions for building and taking apart values.
 
@@ -42,13 +41,17 @@ newCons cons@(Cons path ref i) (Cons path2 _ j)
 	| otherwise	= unsafePerformIO $ do
 		(p, used, sz) <- readIORef ref
 		(p, sz) <- if used + 8 > sz then do
-				munmapFilePtr p sz
-				(p, sz, _, _) <- mmapFilePtr path ReadWriteEx (Just (0, sz + 100))
+				{-fl <- openBinaryFile path ReadWriteMode
+				hSetFileSize fl (toInteger (sz + 100))
+				hClose fl-}
+				freeForeignPtr p
+				(p, _, sz) <- mmapFileForeignPtr path ReadWrite (Just (0, sz + 100))
 				return (p, sz)
 			else
 				return (p, sz)
-		poke (p `plusPtr` used) i
-		poke (p `plusPtr` (used + 4)) j
+		withForeignPtr p $ \p -> do
+			poke (p `plusPtr` used) i
+			poke (p `plusPtr` (used + 4)) j
 		writeIORef ref (p, used + 8, sz)
 		return (Cons path ref used)
 {-# INLINE newCons #-}
@@ -69,7 +72,7 @@ first c@(Cons path ref i)
 #endif
 	| otherwise	= do
 		(p, _, _) <- readIORef ref
-		n <- peek (p `plusPtr` i)
+		n <- withForeignPtr p $ \p -> peek (p `plusPtr` i)
 		return (Cons path ref n)
 {-# INLINE first #-}
 
@@ -79,7 +82,7 @@ second c@(Cons path ref i)
 #endif
 	| otherwise	= do
 		(p, _, _) <- readIORef ref
-		n <- peek (p `plusPtr` (i + 4))
+		n <- withForeignPtr p $ \p -> peek (p `plusPtr` (i + 4))
 		return (Cons path ref n)
 {-# INLINE second #-}
 
@@ -109,7 +112,7 @@ setFirst c@(Cons path ref i) (Cons path2 _ j)
 			error "setFirst: invalid ptr"
 		else
 #endif
-		poke (p `plusPtr` i) j
+		withForeignPtr p $ \p -> poke (p `plusPtr` i) j
 {-# INLINE setFirst #-}
 
 setSecond c@(Cons path ref i) (Cons path2 _ j)
@@ -124,7 +127,7 @@ setSecond c@(Cons path ref i) (Cons path2 _ j)
 			error "setSecond: invalid ptr"
 		else
 #endif
-		poke (p `plusPtr` (i + 4)) j
+		withForeignPtr p $ \p -> poke (p `plusPtr` (i + 4)) j
 {-# INLINE setSecond #-}
 
 list [x] = newCons x (newInt x 0)

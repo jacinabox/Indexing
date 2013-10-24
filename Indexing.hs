@@ -23,6 +23,8 @@ import Split
 import System.IO.Error
 import System.IO.Unsafe
 
+import System.Exit
+
 import Unpacks
 
 toUpperCase s = map toUpper s
@@ -59,7 +61,7 @@ addChunkToIndex logicalName nm idx add = do
 index name logicalName = catch (do
 	putStrLn name
 	idxNm <- indexFileName
-	idx <- openHandle idxNm ReadWriteMode
+	idx <- openHandle idxNm
 	let nm = encodeString idx logicalName
 
 	-- Adding the file's name to the index.
@@ -101,15 +103,18 @@ index name logicalName = catch (do
 		remaining <- hGetContents fl
 		addChunkToIndex logicalName nm idx (toUpperCase remaining ++ replicate (5 - length remaining) ' ')
 		hClose fl
+
 	closeHandle idx)
 	(\(er :: IOError) -> putStrLn (":::" ++ show er))
 
-details1 name logicalName code = maybe
+details1 name logicalName code = catch
+	(maybe
 	code
 	(\f -> do
 		unpacked <- f name
 		indexDirectory unpacked (logicalName ++ "@"))
-	(lookup (takeExtension name) unpacks)
+	(lookup (takeExtension name) unpacks))
+	(\(er :: IOError) -> putStrLn (":::" ++ show er))
 
 details2 name code = do
 	userdata <- getAppUserDataDirectory "Index"
@@ -164,9 +169,9 @@ insertSingle k v ins idx = do
 	f <- first cons
 	if isPair f then do
 		x <- nth 1 f
-		insert cmpr2 (encodeString idx k) (newCons ins x) cons
+		dinsert cmpr2 (encodeString idx k) (newCons ins x) cons
 	else
-		insert cmpr2 (encodeString idx k) (list [ins]) cons
+		dinsert cmpr2 (encodeString idx k) (list [ins]) cons
 {-# INLINE insertSingle #-}
 
 -- A pure version of lookIdxImpl. Its use is justified by the fact that we
@@ -199,7 +204,7 @@ extractText name = do
 lookKeywords keywords caseSensitive = do
 	idxNm <- indexFileName
 	let longKeywords = filter ((>=5) . length) keywords
-	idx <- openHandle idxNm ReadMode
+	idx <- openHandle idxNm
 	let possibilities = nub $ intersects $ map ((`look` idx) . toUpperCase)
 		$ if null longKeywords then keywords else longKeywords
 	texts <- mapM (\nm -> liftM (\str -> (nm, str)) (extractText nm))
