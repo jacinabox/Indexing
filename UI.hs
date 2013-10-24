@@ -100,6 +100,8 @@ hitTest y resultsRef scrollRef = do
 	scroll <- readIORef scrollRef
 	return $ (y - textBoxHeight + scroll) `div` ((nKeywords+1)*textHeight+3*pad)
 
+quote s = '"' : s ++ "\""
+
 wndProc :: IORef (Maybe (HWND, HWND)) -> IORef ([(String, [String])], Int32) -> IORef Sort -> IORef Int32 -> HWND -> UINT -> WPARAM -> LPARAM -> IO LRESULT
 wndProc ref resultsRef sortRef scrollRef wnd msg wParam lParam
 	| msg == wM_COMMAND && loWord (fromIntegral wParam) == btnId	= do
@@ -142,7 +144,7 @@ wndProc ref resultsRef sortRef scrollRef wnd msg wParam lParam
 		(res, _) <- readIORef resultsRef
 		i <- hitTest (hiWord lParam) resultsRef scrollRef
 		when (i < fromIntegral (length res)) $ do
-			createProcess (shell $ head $ split '@' $ fst $ res !! fromIntegral i)
+			createProcess (shell $ quote $ head $ split '@' $ fst $ res !! fromIntegral i)
 			return ()
 		return 0
 	| msg == wM_MOUSEMOVE	= do
