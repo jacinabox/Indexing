@@ -27,11 +27,15 @@ import Unpacks
 
 toUpperCase s = map toUpper s
 
-chunks n ls
-	| length ls <= n	= [ls ++ replicate (n - length ls) ' ']
-	| otherwise		= take n ls : chunks n (drop n ls)
+chunks0 n ls
+	| length ls < n	= []
+	| otherwise	= take n ls : chunks0 n (drop n ls)
 
-indexAddition text = concatMap (\chnk -> [chnk, reverse chnk]) $ chunks 5 $ toUpperCase text
+chunks n ls
+	| length ls < n	= [ls]
+	| otherwise	= chunks0 n ls
+
+indexAddition text = concatMap (\chnk -> [chnk, reverse chnk]) $ chunks0 5 $ toUpperCase text ++ "   "
 
 isPrintable c = ord c >= 32 || c == '\t' || c == '\n' || c == '\r'
 
@@ -179,8 +183,9 @@ max' f x1 x2
 
 look keyword idx = do
 		window <- map (\n -> max' length (drop n keyword) (reverse (take n keyword))) [0..4]
-		let chunk = take 5 window
-		lookIdx chunk (chunk ++ replicate (5 - length chunk) '~') idx
+		intersects $ do
+			chunk <- chunks 5 window
+			return (lookIdx chunk (chunk ++ replicate (5 - length chunk) '~') idx)
 	`mplus` if length keyword == 3 then do
 			chr <- [' '..'~']
 			lookIdx (chr : keyword) (chr : keyword ++ "~") idx
