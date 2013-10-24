@@ -181,10 +181,11 @@ look keyword idx = do
 		window <- map (\n -> max' length (drop n keyword) (reverse (take n keyword))) [0..4]
 		let chunk = take 5 window
 		lookIdx chunk (chunk ++ replicate (5 - length chunk) '~') idx
-	`mplus` if length keyword == 3 then
-			[ res | chr <- [' '..'~'], res <- lookIdx (chr : keyword) (chr : keyword ++ "~") idx ]
+	`mplus` if length keyword == 3 then do
+			chr <- [' '..'~']
+			lookIdx (chr : keyword) (chr : keyword ++ "~") idx
 		else
-			[]
+			mzero
 
 extractText name = do
 	let paths = split '@' name
