@@ -27,16 +27,11 @@ import Unpacks
 
 toUpperCase s = map toUpper s
 
-chunks0 n ls
-	| length ls < n	= []
-	| otherwise	= take n ls : chunks0 n (drop n ls)
+chunks n ls
+	| length ls <= n	= [ls ++ replicate (n - length ls) ' ']
+	| otherwise		= take n ls : chunks n (drop n ls)
 
-chunks n ls = if length ls < n then
-		[ls]
-	else
-		chunks0 n ls
-
-indexAddition text = concatMap (\chnk -> [chnk, reverse chnk]) $ chunks0 5 $ toUpperCase text ++ "   "
+indexAddition text = concatMap (\chnk -> [chnk, reverse chnk]) $ chunks 5 $ toUpperCase text
 
 isPrintable c = ord c >= 32 || c == '\t' || c == '\n' || c == '\r'
 
@@ -62,7 +57,9 @@ index name logicalName = catch (do
 	idx <- openHandle idxNm
 	let nm = encodeString idx logicalName
 
-	-- Adding the file's name to the index.
+	-- Adding the file's name to the index. We do something
+	-- identical for the body of the file, but it has been
+	-- optimized to not use /indexAddition/.
 	mapM_
 		(addChunkToIndex logicalName nm idx)
 		(indexAddition (takeFileName name))
@@ -182,7 +179,8 @@ max' f x1 x2
 
 look keyword idx = do
 		window <- map (\n -> max' length (drop n keyword) (reverse (take n keyword))) [0..4]
-		intersects [ lookIdx chunk (chunk ++ replicate (5 - length chunk) '~') idx | chunk <- chunks 5 window ]
+		let chunk = take 5 window
+		lookIdx chunk (chunk ++ replicate (5 - length chunk) '~') idx
 	`mplus` if length keyword == 3 then
 			[ res | chr <- [' '..'~'], res <- lookIdx (chr : keyword) (chr : keyword ++ "~") idx ]
 		else
