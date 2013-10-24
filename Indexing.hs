@@ -23,8 +23,6 @@ import Split
 import System.IO.Error
 import System.IO.Unsafe
 
-import System.Exit
-
 import Unpacks
 
 toUpperCase s = map toUpper s
