@@ -7,8 +7,6 @@ import Control.Monad
 import System.Directory
 import Data.Char
 import System.IO
-import Data.Array.Unboxed (UArray)
-import Data.Array.IArray hiding (index)
 import Data.Function
 import System.Environment
 import Data.IORef
@@ -16,11 +14,12 @@ import System.Process
 import System.FilePath
 import Control.Exception
 import Data.Maybe
+import System.IO.Error
+import Control.Parallel.Strategies
 import Prelude hiding (catch)
 import FileCons
 import Replace
 import Split
-import System.IO.Error
 import System.IO.Unsafe
 
 import Unpacks
@@ -181,11 +180,12 @@ max' f x1 x2
 	| f x1 > f x2	= x1
 	| otherwise	= x2
 
-look keyword idx = do
+look keyword idx = concat ((do
 		window <- map (\n -> max' length (drop n keyword) (reverse (take n keyword))) [0..4]
-		intersects $ do
+		return $ intersects $ do
 			chunk <- chunks 5 window
-			return (lookIdx chunk (chunk ++ replicate (5 - length chunk) '~') idx)
+			return (lookIdx chunk (chunk ++ replicate (5 - length chunk) '~') idx))
+		`using` parList (evalList rseq))
 	`mplus` if length keyword == 3 then do
 			chr <- [' '..'~']
 			lookIdx (chr : keyword) (chr : keyword ++ "~") idx
@@ -207,16 +207,19 @@ lookKeywords keywords caseSensitive = do
 	idxNm <- indexFileName
 	let longKeywords = filter ((>=5) . length) keywords
 	idx <- openHandle idxNm
-	let possibilities = nub $ intersects $ map ((`look` idx) . toUpperCase)
-		$ if null longKeywords then keywords else longKeywords
+	let possibilities = nub $ intersects ((map ((`look` idx) . toUpperCase)
+		$ if null longKeywords then keywords else longKeywords)
+		`using` parList (evalList rseq))
 	texts <- mapM (\nm -> liftM (\str -> (nm, str)) (extractText nm))
 		possibilities
 	closeHandle idx
 	let caseFunction = if caseSensitive then id else toUpperCase
 	let keywords2 = map caseFunction keywords
-	return $ filter
+	let selected = map
 		(\(nm, str) -> all (\k -> any (isInfixOf k . caseFunction) [takeFileName nm, str]) keywords2)
 		texts
+		`using` parList rseq
+	return $ map snd $ filter fst $ zip selected texts
 
 lineNumber idx num (line:lines) = if idx < length line then
 		num
