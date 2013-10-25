@@ -21,5 +21,6 @@ Hard problems to solve with this project:
 
 * Writing a component (Linux Security Modules, or minifilter drivers on Windows) that monitors file writes on the system, and queues those files for indexing.
 * Add more functions to the unpacks list in Unpacks.hs, to convert things like Word documents to plain text for indexing. (Use the treatment of HTML in Unpacks.hs as an example.)
+* End-to-end support for character sets other than ANSI.
 
 Contributions are appreciated. (info@alkalisoftware.net)
