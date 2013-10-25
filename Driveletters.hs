@@ -1,0 +1,17 @@
+{-# LANGUAGE CPP #-}
+
+module Driveletters (driveLetters) where
+
+import Data.Word
+import Control.Monad
+#ifdef WIN32
+import Graphics.Win32
+
+foreign import stdcall "windows.h GetDriveTypeW" getDriveType :: LPTSTR -> IO Word32
+
+driveLetters = do
+	letters <- mapM (\letter -> liftM (\n -> (letter, n == 3)) (withTString letter getDriveType)) (map (:":\\") ['A'..'Z'])
+	return $ map fst $ filter snd letters
+#else
+driveLetters = undefined
+#endif

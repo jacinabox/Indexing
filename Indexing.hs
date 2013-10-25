@@ -10,7 +10,6 @@ import System.IO
 import Data.Function
 import System.Environment
 import Data.IORef
-import System.Process
 import System.FilePath
 import Control.Exception
 import Data.Maybe
@@ -23,6 +22,7 @@ import Split
 import System.IO.Unsafe
 
 import Unpacks
+import Driveletters
 
 toUpperCase s = map toUpper s
 
@@ -142,8 +142,8 @@ indexDirectory dir logicalDir = catch (do
 
 #ifdef WIN32
 fullIndex = do
-	letters <- readProcess "driveletters.exe" [] ""
-	mapM_ (\dir -> indexDirectory dir dir) (lines letters)
+	letters <- driveLetters
+	mapM_ (\dir -> indexDirectory dir dir) letters
 #else
 fullIndex = indexDirectory "/" "/"
 #endif

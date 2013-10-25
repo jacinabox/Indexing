@@ -10,10 +10,10 @@ An overview of the components of this project:
 * UI.hs - a Win32 GUI, including the entry point.
 * Indexing.hs - the main indexing and searching code.
 * Unpacks.hs - a module that does unpacking of archive files for searching. Also does conversion to plain text.
+* Driveletters.hs - a module that interfaces with Win32, to determine the letters of the fixed drives on the system, for indexing.
 * FileCons.hs - the low-level file access code used by Indexing.hs. Also stands on its own as a library.
-* The driveletters project - a Windows program called driveletters.exe is used to generate the letters of fixed drives on the system. This component is built by Visual Studio 6.
 
-To build the Haskell part of the application, use
+To build the application, use
 
 ghc UI.hs -o Index -O2 -DWIN32 -threaded
 
