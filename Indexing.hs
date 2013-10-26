@@ -6,6 +6,7 @@ import Data.List hiding (union, insert)
 import Control.Monad
 import System.Directory
 import Data.Char
+import Data.Word
 import System.IO
 import Data.Function
 import System.Environment
@@ -19,10 +20,15 @@ import Prelude hiding (catch)
 import FileCons
 import Replace
 import Split
+import Data.String.UTF8 (toString, fromString, toRep, fromRep)
 import System.IO.Unsafe
 
 import Unpacks
 import Driveletters
+
+toUTF s = map (chr . fromIntegral) (toRep $ fromString s :: [Word8])
+
+fromUTF s = toString $ fromRep (map (fromIntegral . ord) s :: [Word8])
 
 toUpperCase s = map toUpper s
 
@@ -44,8 +50,8 @@ indexFileName = do
 	return (dir ++ pathDelimiter : "Index.dat")
 
 addChunkToIndex logicalName nm idx add = do
-	insertSingle add logicalName nm idx
-	insertSingle (reverse add) logicalName nm idx
+	insertSingle add (toUTF logicalName) nm idx
+	insertSingle (reverse add) (toUTF logicalName) nm idx
 {-# INLINE addChunkToIndex #-}
 
 -- We maintain a distinction between "names" and "logical names," in order
@@ -55,17 +61,17 @@ addChunkToIndex logicalName nm idx add = do
 -- temporary files that resulted from unpacking.
 
 index name logicalName = catch (do
-	putStrLn name
+	catch (putStrLn name) (\(_ :: IOError) -> return ())
 	idxNm <- indexFileName
 	idx <- openHandle idxNm
-	let nm = encodeString idx logicalName
+	let nm = encodeString idx (toUTF logicalName)
 
 	-- Adding the file's name to the index. We do something
 	-- identical for the body of the file, but it has been
 	-- optimized to not use /indexAddition/.
 	mapM_
 		(addChunkToIndex logicalName nm idx)
-		(indexAddition (takeFileName name))
+		(indexAddition (toUTF (takeFileName name)))
 
 	-- Checks to see if the file is binary. If so, we skip it.
 	fl <- openBinaryFile name ReadMode
@@ -159,7 +165,7 @@ intersects ls = foldl1 intersect ls
 lookIdxImpl k k2 idx = do
 	f <- first idx
 	ls <- dlookup cmpr k k2 f
-	liftM concat $ mapM (\x -> toList x >>= mapM decodeString) ls
+	liftM concat $ mapM (\x -> toList x >>= mapM (liftM fromUTF . decodeString)) ls
 {-# INLINE lookIdxImpl #-}
 
 insertSingle k v ins idx = do
@@ -184,10 +190,10 @@ look keyword idx = concat ((do
 		window <- map (\n -> max' length (drop n keyword) (reverse (take n keyword))) [0..4]
 		return $ intersects $ do
 			chunk <- chunks 5 window
-			return (lookIdx chunk (chunk ++ replicate (5 - length chunk) '~') idx))
+			return (lookIdx chunk (chunk ++ replicate (5 - length chunk) (chr 255)) idx))
 		`using` parList (evalList rseq))
 	`mplus` if length keyword == 3 then do
-			chr <- [' '..'~']
+			chr <- [' '..chr 255]
 			lookIdx (chr : keyword) (chr : keyword ++ "~") idx
 		else
 			mzero
@@ -198,17 +204,23 @@ extractText name = do
 		(\path logicalPath -> liftM (++logicalPath) (fromJust (lookup (takeExtension path) unpacks) path))
 		(head paths)
 		(tail paths)
-	readFile finalPath
+	fl <- openFile finalPath ReadMode
+	hSetEncoding fl utf8
+	hGetContents fl
 
 -- First it acquires a list, /possibilities/, which is a superset of the correct
 -- results. Then it winnows this list down by searching for the keywords
 -- in the texts of the files.
+--
+-- We use UTF8 when building /possibilities/, then switch to Unicode when
+-- searching in the texts of the files.
 lookKeywords keywords caseSensitive = do
 	idxNm <- indexFileName
-	let longKeywords = filter ((>=5) . length) keywords
+	let utfKeywords = map toUTF keywords
+	let longKeywords = filter ((>=5) . length) utfKeywords
 	idx <- openHandle idxNm
 	let possibilities = nub $ intersects ((map ((`look` idx) . toUpperCase)
-		$ if null longKeywords then keywords else longKeywords)
+		$ if null longKeywords then utfKeywords else longKeywords)
 		`using` parList (evalList rseq))
 	texts <- mapM (\nm -> liftM (\str -> (nm, str)) (extractText nm))
 		possibilities
