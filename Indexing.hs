@@ -204,23 +204,19 @@ extractText name = do
 		(\path logicalPath -> liftM (++logicalPath) (fromJust (lookup (takeExtension path) unpacks) path))
 		(head paths)
 		(tail paths)
-	fl <- openFile finalPath ReadMode
-	hSetEncoding fl utf8
+	fl <- openBinaryFile finalPath ReadMode
 	hGetContents fl
 
 -- First it acquires a list, /possibilities/, which is a superset of the correct
 -- results. Then it winnows this list down by searching for the keywords
 -- in the texts of the files.
---
--- We use UTF8 when building /possibilities/, then switch to Unicode when
--- searching in the texts of the files.
 lookKeywords keywords caseSensitive = do
 	idxNm <- indexFileName
-	let utfKeywords = map toUTF keywords
-	let longKeywords = filter ((>=5) . length) utfKeywords
+	keywords <- return $ map toUTF keywords
+	let longKeywords = filter ((>=5) . length) keywords
 	idx <- openHandle idxNm
 	let possibilities = nub $ intersects ((map ((`look` idx) . toUpperCase)
-		$ if null longKeywords then utfKeywords else longKeywords)
+		$ if null longKeywords then keywords else longKeywords)
 		`using` parList (evalList rseq))
 	texts <- mapM (\nm -> liftM (\str -> (nm, str)) (extractText nm))
 		possibilities
@@ -228,7 +224,7 @@ lookKeywords keywords caseSensitive = do
 	let caseFunction = if caseSensitive then id else toUpperCase
 	let keywords2 = map caseFunction keywords
 	let selected = map
-		(\(nm, str) -> all (\k -> any (isInfixOf k . caseFunction) [takeFileName nm, str]) keywords2)
+		(\(nm, str) -> all (\k -> any (isInfixOf k . caseFunction) [toUTF (takeFileName nm), str]) keywords2)
 		texts
 		`using` parList rseq
 	return $ map snd $ filter fst $ zip selected texts
