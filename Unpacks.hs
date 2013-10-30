@@ -8,6 +8,7 @@ import System.Directory
 import System.Process
 import System.FilePath
 import Control.Exception
+import Control.Monad
 import Prelude hiding (catch)
 import Replace
 
@@ -86,7 +87,26 @@ conversionTable = [("&nbsp;", ' '),
 	("&uuml;", chr 252),
 	("&yacute;", chr 253)]
 
-convertHtml s = replace (map (\(repl, with) -> (repl, [with])) conversionTable) $ convertHtml0 s
+convertHtml = replace (map (\(repl, with) -> (repl, [with])) conversionTable) . convertHtml0
+
+convertRtf0 count ('\\':'{':xs) = '{' : convertRtf0 count xs
+convertRtf0 count ('\\':'}':xs) = '}' : convertRtf0 count xs
+convertRtf0 count ('{':xs) = convertRtf0 (count + 1) xs
+convertRtf0 count ('}':xs) = convertRtf0 (count - 1) xs
+convertRtf0 count (x:xs) = if count > 0 then convertRtf0 count xs else x : convertRtf0 count xs
+convertRtf0 _ [] = []
+
+-- These escape sequences should be removed entirely
+escapeTableRemove = ["\\par", "\\pard", "\\hyphpar", "\\intbl", "\\keep", "\\nowidctlpar", "\\widctlpar", "\\keepn", "\\noline", "\\pagebb", "\\sbys", "\\ql", "\\qr", "\\qj", "\\qc", "\\rtlpar", "\\ltrpar", "\\tqr", "\\tqc", "\\tqdec", "\\tldot", "\\tlhyph", "\\tlul", "\\tlth", "\\tleq", "\\plain", "\\b", "\\caps", "\\deleted", "\\dnN", "\\embo", "\\impr", "\\sub", "\\nosupersub", "\\i", "\\outl", "\\csaps", "\\shad", "\\strike", "\\strikedl", "\\ul", "\\uld", "\\uldash", "\\uldashd", "\\uldashdd", "\\uldb", "\\ulnone", "\\ulth", "\\ulw", "\\ulwave", "\\super", "\\v", "\\rtlch", "\\ltrch"]
+
+escapeTableNumbersFollowing = ["\\expnd", "\\expndtw", "\\kerning", "\\f", "\\fs", "\\cf", "\\cb", "\\cs", "\\cchs", "\\lang"]
+
+eraseNumbered s@(x:xs) = case foldr mplus mzero (map (\y -> stripPrefix y s) escapeTableNumbersFollowing) of
+	Just ys -> eraseNumbered $ snd $ span isDigit ys
+	Nothing -> x : eraseNumbered xs
+eraseNumbered [] = []
+
+convertRtf = replace (("\\\\", "\\") : map (\x -> (x, "")) escapeTableRemove) . eraseNumbered . convertRtf0 0 . init . tail
 
 getUnpackDir n = do
 	tmp <- getTemporaryDirectory
@@ -122,6 +142,7 @@ unpacks = [(".htm", convertFile convertHtml),
 	(".docm", convertFile convertHtml),
 	(".xlsx", convertFile convertHtml),
 	(".xlsm", convertFile convertHtml),
+	(".rtf", convertFile convertRtf),
 	(".gz", unpack "gzip" ["-d"]),
 	(".bz2", unpack "bunzip2" []),
 	(".tar", unpack "tar" ["-xf"]),
