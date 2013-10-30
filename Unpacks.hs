@@ -42,8 +42,10 @@ unpack cmd switches name = do
 	path <- getUnpackDir 0
 	let path2 = path ++ takeFileName name
 	copyFile name path2
+	curdir <- getCurrentDirectory
 	setCurrentDirectory path
 	readProcess cmd (switches ++ [takeFileName name]) ""
+	setCurrentDirectory curdir
 	catch (removeFile path2) (\(_ :: IOError) -> return ())
 	return path
 
