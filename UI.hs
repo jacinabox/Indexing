@@ -197,8 +197,10 @@ wndProc resultsRef sortRef scrollRef historyRef wnd msg wParam lParam
 
 	-- This is where we actually do the search
 	| msg == wM_USER + 1	= do
-		drawMessage wnd
 		txt <- getDlgItem wnd txtId
+		btn <- getDlgItem wnd btnId
+		showWindow btn sW_HIDE
+		drawMessage wnd
 		s <- getWindowText txt
 		setWindowText wnd (s ++ " - Desktop Search")
 		insertString txt s
