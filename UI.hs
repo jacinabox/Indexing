@@ -243,7 +243,7 @@ wndProc resultsRef sortRef scrollRef historyRef wnd msg wParam lParam
 		showWindow btn sW_HIDE
 		return 0)
 		(\(_ :: SomeException) -> return 0)
-	| msg == wM_CTLCOLORDLG	= liftM unsafeCoerce (getStockBrush wHITE_BRUSH)
+	| msg == wM_CTLCOLORDLG	= liftM unsafeCoerce (getStockBrush nULL_BRUSH)
 	| msg == wM_PAINT	= allocaPAINTSTRUCT $ \ps -> do
 		dc <- beginPaint wnd ps
 		(results, nKeywords) <- readIORef resultsRef
@@ -258,6 +258,8 @@ wndProc resultsRef sortRef scrollRef historyRef wnd msg wParam lParam
 			(\(result, contexts) -> do
 				y <- readIORef yRef
 				let newY = y+textHeight*(nKeywords+1)+3*pad
+
+				fillRect dc (0, y + 1, 32767, newY) white
 
 				textOut dc pad (y + pad) result
 				
@@ -275,6 +277,9 @@ wndProc resultsRef sortRef scrollRef historyRef wnd msg wParam lParam
 				writeIORef yRef newY)
 			results
 		deletePen pen
+
+		y <- readIORef yRef
+		fillRect dc (0, y + 1, 32767, 32767) white
 
 		selectFont dc oldFont
 		endPaint wnd ps
