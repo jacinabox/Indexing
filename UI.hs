@@ -32,6 +32,12 @@ foreign import stdcall "windows.h SetFocus" setFocus :: HWND -> IO HWND
 
 foreign import stdcall "windows.h GetWindow" getWindow :: HWND -> UINT -> IO HWND
 
+foreign import stdcall "windows.h DrawTextW" c_DrawText :: HDC -> LPTSTR -> Int32 -> LPRECT -> UINT -> IO Int32
+
+drawText dc s rt format = withTString s $ \ps ->
+	withRECT rt $ \pr ->
+		c_DrawText dc ps (-1) pr format
+
 getWindowText wnd = do
 	ptr <- mallocForeignPtrBytes 1000
 	withForeignPtr ptr $ \p -> do
@@ -44,7 +50,7 @@ textBoxHeight :: Int32
 textBoxHeight = 19
 
 textHeight :: Int32
-textHeight = 14
+textHeight = 13
 
 pad :: Int32
 pad = 3
@@ -148,6 +154,12 @@ txtProc parent proc wnd msg wParam lParam
 		= sendMessage parent (wM_USER + 2) wParam 0
 	| otherwise		= proc wnd msg wParam lParam
 
+doText dc x y s = do
+	textOut dc x y s
+	(ext, _) <- getTextExtentPoint32 dc s
+	white <- getStockBrush wHITE_BRUSH
+	fillRect dc (x + ext, y, 32767, y + textHeight) white
+
 quote s = "\"" ++ s ++ "\""
 
 wndProc :: IORef ([(String, [String])], Int32) -> IORef Sort -> IORef Int32 -> IORef [String] -> HWND -> UINT -> WPARAM -> LPARAM -> IO Int
@@ -243,7 +255,7 @@ wndProc resultsRef sortRef scrollRef historyRef wnd msg wParam lParam
 		showWindow btn sW_HIDE
 		return 0)
 		(\(_ :: SomeException) -> return 0)
-	| msg == wM_CTLCOLORDLG	= liftM unsafeCoerce (getStockBrush wHITE_BRUSH)
+	| msg == wM_CTLCOLORDLG	= liftM unsafeCoerce (getStockBrush nULL_BRUSH)
 	| msg == wM_PAINT	= allocaPAINTSTRUCT $ \ps -> do
 		dc <- beginPaint wnd ps
 		(results, nKeywords) <- readIORef resultsRef
@@ -259,13 +271,20 @@ wndProc resultsRef sortRef scrollRef historyRef wnd msg wParam lParam
 				y <- readIORef yRef
 				let newY = y+textHeight*(nKeywords+1)+3*pad
 
-				textOut dc pad (y + pad) result
-				
-				modifyIORef' yRef (+(textHeight+2*pad))
-				mapM_ (\s -> do
-					y <- readIORef yRef
-					textOut dc pad y s
-					writeIORef yRef (y + textHeight)) contexts
+				fillRect dc (0, y + 1, 32767, y + pad) white
+				fillRect dc (0, y + 1, pad, newY - 1) white
+
+				doText dc pad (y + pad) result
+
+				fillRect dc (0, y + pad + textHeight, 32767, y + 2 * pad + textHeight) white
+                                
+                                modifyIORef' yRef (+(textHeight+2*pad))
+                                mapM_ (\s -> do
+                                        y <- readIORef yRef
+                                        doText dc pad y s
+                                        writeIORef yRef (y + textHeight)) contexts
+
+				fillRect dc (0, newY - pad, 32767, newY) white
 
 				oldpen <- selectPen dc pen
 				moveToEx dc 0 newY
@@ -275,6 +294,9 @@ wndProc resultsRef sortRef scrollRef historyRef wnd msg wParam lParam
 				writeIORef yRef newY)
 			results
 		deletePen pen
+
+		y <- readIORef yRef
+		fillRect dc (0, y + 1, 32767, 32767) white
 
 		selectFont dc oldFont
 		endPaint wnd ps
