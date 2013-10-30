@@ -66,6 +66,8 @@ cB_ADDSTRING = 323
 
 gW_CHILD = 5
 
+dLGC_WANTALLKEYS = 4
+
 txtId :: Int
 txtId = 100
 
@@ -139,7 +141,11 @@ writeHistory historyRef = do
 	hClose fl
 
 txtProc parent proc wnd msg wParam lParam
-	| msg == wM_KEYDOWN && wParam `elem` [vK_UP, vK_DOWN, vK_PRIOR, vK_NEXT]	= sendMessage parent (wM_USER + 1) wParam 0
+	| msg == wM_GETDLGCODE	= return dLGC_WANTALLKEYS
+	| msg == wM_KEYDOWN && wParam == vK_RETURN
+		= sendMessage parent (wM_USER + 1) 0 0
+	| msg == wM_KEYDOWN && wParam `elem` [vK_UP, vK_DOWN, vK_PRIOR, vK_NEXT]
+		= sendMessage parent (wM_USER + 2) wParam 0
 	| otherwise		= proc wnd msg wParam lParam
 
 quote s = "\"" ++ s ++ "\""
@@ -179,7 +185,7 @@ wndProc resultsRef sortRef scrollRef historyRef wnd msg wParam lParam
 		return 0
 
 	-- This is where we actually do the search
-	| msg == wM_COMMAND && loWord (fromIntegral wParam) == fromIntegral iDOK	= do
+	| msg == wM_USER + 1	= do
 		drawMessage wnd
 		txt <- getDlgItem wnd txtId
 		s <- getWindowText txt
@@ -197,8 +203,8 @@ wndProc resultsRef sortRef scrollRef historyRef wnd msg wParam lParam
 		invalidateRect (Just wnd) Nothing True
 		return 0
 
-	-- Handlers relating to scrolling
-	| msg == wM_USER + 1	= do
+	-- Handler relating to scrolling
+	| msg == wM_USER + 2	= do
 		txt <- getDlgItem wnd txtId
 		btn <- getDlgItem wnd btnId
 		showWindow btn sW_HIDE
@@ -207,9 +213,6 @@ wndProc resultsRef sortRef scrollRef historyRef wnd msg wParam lParam
 		(res, nKeywords) <- readIORef resultsRef
 		modifyIORef' scrollRef (\x -> (((nKeywords+1)*textHeight+3*pad)*(fromIntegral (length res)-1)) `min` (0 `max` (x + offset)))
 		invalidateRect (Just wnd) Nothing True
-		return 0
-	| msg == wM_MOUSEWHEEL	= do
-		sendMessage wnd wM_USER (if hiWord (fromIntegral wParam) > 0 then vK_UP else vK_DOWN) 0
 		return 0
 
 	-- Miscellaneous handlers
@@ -240,6 +243,7 @@ wndProc resultsRef sortRef scrollRef historyRef wnd msg wParam lParam
 		showWindow btn sW_HIDE
 		return 0)
 		(\(_ :: SomeException) -> return 0)
+	| msg == wM_CTLCOLORDLG	= liftM unsafeCoerce (getStockBrush wHITE_BRUSH)
 	| msg == wM_PAINT	= allocaPAINTSTRUCT $ \ps -> do
 		dc <- beginPaint wnd ps
 		(results, nKeywords) <- readIORef resultsRef
@@ -248,14 +252,12 @@ wndProc resultsRef sortRef scrollRef historyRef wnd msg wParam lParam
 		font <- getStockFont aNSI_VAR_FONT
 		oldFont <- selectFont dc font
 
-		pen <- createPen pS_SOLID 0 (rgb 128 128 128)
+		pen <- createPen pS_SOLID 0 (rgb 192 192 192)
 		yRef <- newIORef (textBoxHeight - scroll)
 		mapM_
 			(\(result, contexts) -> do
 				y <- readIORef yRef
 				let newY = y+textHeight*(nKeywords+1)+3*pad
-
-				fillRect dc (0, y + 1, 32767, newY) white
 
 				textOut dc pad (y + pad) result
 				
@@ -273,9 +275,6 @@ wndProc resultsRef sortRef scrollRef historyRef wnd msg wParam lParam
 				writeIORef yRef newY)
 			results
 		deletePen pen
-
-		y <- readIORef yRef
-		fillRect dc (0, y + 1, 32767, 32767) white
 
 		selectFont dc oldFont
 		endPaint wnd ps
