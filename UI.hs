@@ -32,6 +32,12 @@ foreign import stdcall "windows.h SetFocus" setFocus :: HWND -> IO HWND
 
 foreign import stdcall "windows.h GetWindow" getWindow :: HWND -> UINT -> IO HWND
 
+foreign import stdcall "windows.h DrawTextW" c_DrawText :: HDC -> LPTSTR -> Int32 -> LPRECT -> UINT -> IO Int32
+
+drawText dc s rt format = withTString s $ \ps ->
+	withRECT rt $ \pr ->
+		c_DrawText dc ps (-1) pr format
+
 getWindowText wnd = do
 	ptr <- mallocForeignPtrBytes 1000
 	withForeignPtr ptr $ \p -> do
@@ -147,6 +153,12 @@ txtProc parent proc wnd msg wParam lParam
 	| msg == wM_KEYDOWN && wParam `elem` [vK_UP, vK_DOWN, vK_PRIOR, vK_NEXT]
 		= sendMessage parent (wM_USER + 2) wParam 0
 	| otherwise		= proc wnd msg wParam lParam
+
+doText dc x y s = do
+	textOut dc x y s
+	(ext, _) <- getTextExtentPoint32 dc s
+	white <- getStockBrush wHITE_BRUSH
+	fillRect dc (x + ext, y, 32767, y + textHeight) white
 
 quote s = "\"" ++ s ++ "\""
 
@@ -268,7 +280,6 @@ wndProc resultsRef sortRef scrollRef historyRef wnd msg wParam lParam
 					y <- readIORef yRef
 					textOut dc pad y s
 					writeIORef yRef (y + textHeight)) contexts
-
 				oldpen <- selectPen dc pen
 				moveToEx dc 0 newY
 				lineTo dc 32767 newY
