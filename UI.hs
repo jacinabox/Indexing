@@ -94,12 +94,13 @@ subclassProc wnd proc = do
 
 drawMessage wnd = do
 	dc <- getDC (Just wnd)
-	font <- getStockFont aNSI_VAR_FONT
+	font <- makeFont fW_NORMAL
 	oldFont <- selectFont dc font
 	white <- getStockBrush wHITE_BRUSH
 	fillRect dc (0, textBoxHeight + 1, 32767, 32767) white
 	textOut dc pad (textBoxHeight + pad) "Please wait"
 	selectFont dc oldFont
+	deleteFont font
 	releaseDC (Just wnd) dc
 
 sortResults sortRef resultsRef = do
@@ -158,6 +159,10 @@ doText dc x y s = do
 	(ext, _) <- getTextExtentPoint32 dc s
 	white <- getStockBrush wHITE_BRUSH
 	fillRect dc (x + ext, y, 32767, y + textHeight) white
+
+makeFont weight = catch
+	(createFont 13 0 0 0 weight False False False dEFAULT_CHARSET oUT_DEFAULT_PRECIS cLIP_DEFAULT_PRECIS dEFAULT_QUALITY fF_DONTCARE "Tahoma")
+	(\(_ :: SomeException) -> getStockFont aNSI_VAR_FONT)
 
 quote s = "\"" ++ s ++ "\""
 
@@ -248,8 +253,9 @@ wndProc resultsRef sortRef scrollRef historyRef wnd msg wParam lParam
 		(results, nKeywords) <- readIORef resultsRef
 		scroll <- readIORef scrollRef
 		white <- getStockBrush wHITE_BRUSH
-		font <- getStockFont aNSI_VAR_FONT
-		oldFont <- selectFont dc font
+		font <- makeFont fW_NORMAL
+		fontBold <- makeFont fW_BOLD
+		oldFont <- selectFont dc fontBold
 
 		pen <- createPen pS_SOLID 0 (rgb 192 192 192)
 		yRef <- newIORef (textBoxHeight - scroll)
@@ -262,6 +268,7 @@ wndProc resultsRef sortRef scrollRef historyRef wnd msg wParam lParam
 
 				textOut dc pad (y + pad) result
 				
+				selectFont dc font
 				modifyIORef' yRef (+(textHeight+2*pad))
 				mapM_ (\s -> do
 					y <- readIORef yRef
@@ -271,6 +278,7 @@ wndProc resultsRef sortRef scrollRef historyRef wnd msg wParam lParam
 				moveToEx dc 0 newY
 				lineTo dc 32767 newY
 				selectPen dc oldpen
+				selectFont dc fontBold
 
 				writeIORef yRef newY)
 			results
@@ -280,6 +288,8 @@ wndProc resultsRef sortRef scrollRef historyRef wnd msg wParam lParam
 		fillRect dc (0, y + 1, 32767, 32767) white
 
 		selectFont dc oldFont
+		deleteFont font
+		deleteFont fontBold
 		endPaint wnd ps
 		return 0
 	| msg == wM_CLOSE	= do
@@ -305,9 +315,10 @@ winMain = do
 	readHistory txt historyRef
 	edit <- getWindow txt gW_CHILD
 	subclassProc edit (txtProc wnd)
-	font <- getStockFont aNSI_VAR_FONT
+	font <- makeFont fW_NORMAL
 	sendMessage txt wM_SETFONT (unsafeCoerce font) 1
 	sendMessage btn wM_SETFONT (unsafeCoerce font) 1
+	setFocus txt
 
 	allocaMessage $ \msg ->
 		let loop = do
