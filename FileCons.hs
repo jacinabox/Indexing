@@ -29,9 +29,13 @@ openHandle path = do
 	when (sz == 0) $ newCons (newInt cons 0) (newInt cons 0) `seq` return ()
 	return cons
 
-closeHandle (Cons _ ref _) = do
-	(p, _, sz) <- readIORef ref
+closeHandle (Cons path ref _) = do
+	(p, used, sz) <- readIORef ref
 	munmapFilePtr p sz
+	when (used /= sz) $ do
+		fl <- openBinaryFile path ReadWriteMode
+		hSetFileSize fl (toInteger used)
+		hClose fl
 
 -- Functions for building and taking apart values.
 
@@ -43,7 +47,7 @@ newCons cons@(Cons path ref i) (Cons path2 _ j)
 		(p, used, sz) <- readIORef ref
 		(p, sz) <- if used + 8 > sz then do
 				munmapFilePtr p sz
-				(p, sz, _, _) <- mmapFilePtr path ReadWriteEx (Just (0, sz + 100))
+				(p, sz, _, _) <- mmapFilePtr path ReadWriteEx (Just (0, sz + 10000))
 				return (p, sz)
 			else
 				return (p, sz)
