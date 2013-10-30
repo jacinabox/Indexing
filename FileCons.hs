@@ -32,10 +32,9 @@ openHandle path = do
 closeHandle (Cons path ref _) = do
 	(p, used, sz) <- readIORef ref
 	munmapFilePtr p sz
-	when (used /= sz) $ do
-		fl <- openBinaryFile path ReadWriteMode
-		hSetFileSize fl (toInteger used)
-		hClose fl
+	fl <- openBinaryFile path ReadWriteMode
+	hSetFileSize fl (toInteger used)
+	hClose fl
 
 -- Functions for building and taking apart values.
 
