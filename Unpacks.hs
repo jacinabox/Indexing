@@ -3,6 +3,7 @@
 module Unpacks (unpacks, pathDelimiter) where
 
 import Data.List
+import Data.Char
 import System.Directory
 import System.Process
 import System.FilePath
@@ -17,11 +18,75 @@ pathDelimiter = '/'
 #endif
 
 convertHtml0 ('<':xs) = convertHtml0 $ tail $ snd $ break (=='>') xs
+convertHtml0 ('&':'#':xs) = chr (read num) : convertHtml0 (tail rest)
+	where (num, rest) = span isDigit xs
 convertHtml0 (x:xs) = x : convertHtml0 xs
 convertHtml0 [] = []
 
-convertHtml s = replace [("&nbsp;", " "), ("&lt;", "<"), ("&gt;", ">"), ("&amp;", "&"), ("&quot;", "\"")]
-	$ convertHtml0 s
+conversionTable = [("&nbsp;", ' '),
+	("&lt;", '<'),
+	("&gt;", '>'),
+	("&amp;", '&'),
+	("&quot;", '"'),
+	("&Agrave;", chr 192),
+	("&Aacute;", chr 193),
+	("&Acirc;", chr 194),
+	("&Atilde;", chr 195),
+	("&Auml;", chr 196),
+	("&Aring;", chr 197),
+	("&AElig;", chr 198),
+	("&Ccedil;", chr 199),
+	("&Egrave;", chr 200),
+	("&Eacute;", chr 201),
+	("&Ecirc;", chr 202),
+	("&Euml;", chr 203),
+	("&lgrave;", chr 204),
+	("&lacute;", chr 205),
+	("&lcirc;", chr 206),
+	("&luml;", chr 207),
+	("&ETH;", chr 208),
+	("&Ntilde;", chr 209),
+	("&Ograve;", chr 210),
+	("&Oacute;", chr 211),
+	("&Ocirc;", chr 212),
+	("&Otilde;", chr 213),
+	("&Ouml;", chr 214),
+	("&Oslash;", chr 216),
+	("&Ugrave;", chr 217),
+	("&Uacute;", chr 218),
+	("&Ucirc;", chr 219),
+	("&Uuml;", chr 220),
+	("&Yacute;", chr 221),
+	("&agrave;", chr 224),
+	("&aacute;", chr 225),
+	("&acirc;", chr 226),
+	("&atilde;", chr 227),
+	("&auml;", chr 228),
+	("&aring;", chr 229),
+	("&aelig;", chr 230),
+	("&ccedil;", chr 231),
+	("&egrave;", chr 232),
+	("&eacute;", chr 233),
+	("&ecirc;", chr 234),
+	("&euml;", chr 235),
+	("&igrave;", chr 236),
+	("&iacute;", chr 237),
+	("&icirc;", chr 238),
+	("&iuml;", chr 239),
+	("&eth;", chr 240),
+	("&ntilde;", chr 241),
+	("&ograve;", chr 242),
+	("&oacute;", chr 243),
+	("&ocirc;", chr 244),	
+	("&otilde;", chr 245),
+	("&ouml;", chr 246),
+	("&ugrave;", chr 249),
+	("&uacute;", chr 250),
+	("&ucirc;", chr 251),
+	("&uuml;", chr 252),
+	("&yacute;", chr 253)]
+
+convertHtml s = replace (map (\(repl, with) -> (repl, [with])) conversionTable) $ convertHtml0 s
 
 getUnpackDir n = do
 	tmp <- getTemporaryDirectory
