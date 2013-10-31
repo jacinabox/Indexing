@@ -55,7 +55,9 @@ index name logicalName idx = catch (do
 	catch (putStrLn name) (\(_ :: IOError) -> return ())
 	let nm = encodeString idx logicalName
 
-	-- Adding the file's name to the index.
+	-- Adding the file's name to the index. Something identical
+	-- is done for the body of the file, but it has been
+	-- optimized to not use /indexAddition/.
 	mapM_
 		(\add -> insertSingle add logicalName nm idx)
 		(indexAddition (takeFileName name))
@@ -81,9 +83,24 @@ index name logicalName idx = catch (do
 		-- Associates each suffix array with the given file.
 		fl <- openFile name ReadMode
 		hSetEncoding fl utf8
-		contents <- hGetContents fl
-		mapM_ (\add -> insertSingle add logicalName nm idx)
-			(indexAddition contents)
+		c1 <- hGetChar fl
+		c2 <- hGetChar fl
+		c3 <- hGetChar fl
+		c4 <- hGetChar fl
+		c5 <- hGetChar fl
+		let s = toUpperCase (normalizeText [c1, c2, c3, c4, c5])
+		insertSingle s logicalName nm idx
+		let loop s = do
+			b <- hIsEOF fl
+			if b then do
+					insertSingle (tail s ++ " ") logicalName nm idx
+					insertSingle (drop 2 s ++ "  ") logicalName nm idx
+				else do
+					c <- hGetChar fl
+					let s2 = tail s ++ toUpperCase (normalizeText [c])
+					insertSingle s2 logicalName nm idx
+					loop s2
+		loop s
 		hClose fl)
 	(\(er :: IOError) -> putStrLn (":::" ++ show er))
 
