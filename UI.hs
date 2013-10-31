@@ -64,17 +64,17 @@ gWLP_WNDPROC = -4
 
 wM_MOUSEWHEEL = 522
 
+dLGC_WANTARROWS :: Int32
 dLGC_WANTARROWS = 1
 
-dLGC_DEFPUSHBUTTON = 16
+dLGC_WANTCHARS :: Int32
+dLGC_WANTCHARS = 128
 
 cB_INSERTSTRING = 330
 
 cB_ADDSTRING = 323
 
 gW_CHILD = 5
-
-dLGC_WANTALLKEYS = 4
 
 txtId :: Int
 txtId = 100
@@ -153,11 +153,11 @@ writeHistory historyRef = do
 
 txtProc parent proc wnd msg wParam lParam
 	| msg == wM_GETDLGCODE
-		= return $ dLGC_WANTARROWS .|. dLGC_DEFPUSHBUTTON
-	| msg == wM_KEYDOWN && wParam == vK_RETURN
-		= sendMessage parent (wM_USER + 1) 0 0
+		= return $ dLGC_WANTCHARS .|. dLGC_WANTARROWS
 	| msg == wM_KEYDOWN && wParam `elem` [vK_UP, vK_DOWN, vK_PRIOR, vK_NEXT]
-		= sendMessage parent (wM_USER + 2) wParam 0
+		= do
+			sendMessage parent (wM_USER + 1) wParam 0
+			proc wnd msg wParam lParam
 	| otherwise		= proc wnd msg wParam lParam
 
 doText dc x y s = do
@@ -207,7 +207,7 @@ wndProc resultsRef sortRef scrollRef historyRef wnd msg wParam lParam
 		return 0
 
 	-- This is where we actually do the search
-	| msg == wM_USER + 1	= do
+	| msg == wM_COMMAND && wParam == iDOK	= do
 		txt <- getDlgItem wnd txtId
 		btn <- getDlgItem wnd btnId
 		showWindow btn sW_HIDE
@@ -243,8 +243,20 @@ wndProc resultsRef sortRef scrollRef historyRef wnd msg wParam lParam
 
 	-- Miscellaneous handlers
 	| msg == wM_SETFOCUS	= do
-		txt <- getDlgItem wnd txtId
-		setFocus txt
+		{-txt <- getDlgItem wnd txtId
+		setFocus txt-}
+		return 0
+	| msg == wM_INITDIALOG	= do
+		{-txt <- getDlgItem wnd txtId
+		btn <- getDlgItem wnd btnId
+		inst <- getModuleHandle Nothing
+		readHistory txt historyRef
+		font <- getStockFont aNSI_VAR_FONT
+		edit <- getWindow txt gW_CHILD
+		subclassProc edit (txtProc wnd)
+		sendMessage txt wM_SETFONT (unsafeCoerce font) 1
+	        sendMessage btn wM_SETFONT (unsafeCoerce font) 1
+		setFocus txt-}
 		return 0
 	| msg == wM_SIZE	= catch
 		(do
@@ -312,7 +324,8 @@ winMain = do
 	historyRef <- newIORef []
 	inst <- getModuleHandle Nothing
 	let tmp = DialogTemplate 0 0 640 480 (wS_VISIBLE .|. wS_OVERLAPPEDWINDOW .|. wS_CLIPCHILDREN) 0 (Left 0) (Left 0) (Right "Desktop Search") (Left 0) 14
-		[]
+		[comboBoxControl 0 0 100 10 (wS_VISIBLE .|. wS_CHILDWINDOW .|. cBS_HASSTRINGS .|. cBS_DROPDOWN) 0 txtId "",
+		pushButtonControl 0 0 100 10 wS_CHILDWINDOW 0 btnId "Open containing folder"]
 	tmp2 <- mkDialogFromTemplate tmp
 	dialogBoxIndirect inst tmp2 Nothing (wndProc resultsRef sortRef scrollRef historyRef)
 
@@ -344,4 +357,3 @@ main = do
 				mapM_ putStrLn (contexts keywords text caseSensitive))
 			results
 		when (null results) (putStrLn "Index: no results found")
-
