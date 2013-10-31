@@ -207,13 +207,13 @@ wndProc resultsRef sortRef scrollRef historyRef wnd msg wParam lParam
 		showWindow btn sW_HIDE
 		drawMessage wnd
 		s <- getWindowText txt
-		setWindowText wnd (s ++ " - Desktop Search")
-		insertString txt s
-		modifyIORef' historyRef (s:)
 		let keywords = filter ((>2) . length) (parseKeywords s)
+		setWindowText wnd (s ++ " - Desktop Search")
 		if null keywords then
 				writeIORef resultsRef ([], 0)
 			else do
+				insertString txt s
+				modifyIORef' historyRef (s:)
 				res <- lookKeywords keywords False
 				writeIORef resultsRef (map (\(nm, text) -> (nm, contexts keywords text False)) res, fromIntegral $ length keywords)
 		sortResults sortRef resultsRef
