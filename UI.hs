@@ -229,8 +229,10 @@ wndProc resultsRef sortRef scrollRef historyRef wnd msg wParam lParam
 		(_, _, _, y) <- getClientRect wnd
 		let offset = fromJust $ lookup wParam [(vK_UP, -100), (vK_DOWN, 100), (vK_PRIOR, -y), (vK_NEXT, y)]
 		(res, nKeywords) <- readIORef resultsRef
-		modifyIORef' scrollRef (\x -> (((nKeywords+1)*textHeight+3*pad)*(fromIntegral (length res)-1)) `min` (0 `max` (x + offset)))
-		invalidateRect (Just wnd) Nothing True
+		scroll <- readIORef scrollRef
+		let newScroll = (((nKeywords+1)*textHeight+3*pad)*(fromIntegral (length res)-1)) `min` (0 `max` (scroll + offset))
+		writeIORef scrollRef newScroll
+		when (scroll /= newScroll) (invalidateRect (Just wnd) Nothing True)
 		return 0
 
 	-- Miscellaneous handlers
@@ -292,7 +294,7 @@ wndProc resultsRef sortRef scrollRef historyRef wnd msg wParam lParam
 		deleteFont fontBold
 		endPaint wnd ps
 		return 0
-	| msg == wM_CLOSE	= do
+	| msg == wM_CLOSE || msg == wM_ENDSESSION	= do
 		writeHistory historyRef
 		exitSuccess
 	| otherwise		= defWindowProc (Just wnd) msg wParam lParam
