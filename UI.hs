@@ -44,7 +44,7 @@ getWindowText wnd = do
 		c_GetWindowText wnd p 1000
 		peekTString p
 
-data Sort = ByPath | ByName | ByExtension
+data Sort = ByPath | ByName | ByType
 
 textBoxHeight :: Int32
 textBoxHeight = 19
@@ -109,7 +109,7 @@ sortResults sortRef resultsRef = do
 	writeIORef resultsRef (sortBy (compare `on` \(s, _) -> case srt of
 		ByPath -> s
 		ByName -> takeFileName s
-		ByExtension -> takeExtension s) res,
+		ByType -> takeExtension s) res,
 		nKeywords)
 
 loWord :: LPARAM -> LPARAM
