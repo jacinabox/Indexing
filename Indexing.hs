@@ -5,9 +5,8 @@ module Indexing (indexFileName, indexWrapper, fullIndex, lookKeywords, contexts,
 import Data.List hiding (union, insert)
 import Control.Monad
 import System.Directory
-import Data.Char
-import Data.Word
 import System.IO
+import Data.Char
 import Data.Function
 import System.Environment
 import Data.IORef
@@ -189,6 +188,12 @@ extractText name = do
 	hSetEncoding fl utf8
 	hGetContents fl
 
+details3 code = catch
+	(return $! code)
+	(\(er :: IOError) -> do
+		putStrLn (":::" ++ show er)
+		return False)
+
 -- First it acquires a list, /possibilities/, which is a superset of the correct
 -- results. Then it winnows this list down by searching for the keywords
 -- in the texts of the files.
@@ -206,8 +211,8 @@ lookKeywords keywords caseSensitive = do
 	closeHandle idx
 	let caseFunction = if caseSensitive then id else toUpperCase
 	let keywords2 = map caseFunction keywords
-	return $ filter
-		(\(nm, str) -> all (\k -> any (isInfixOf k . caseFunction . normalizeText) [takeFileName nm, str]) keywords2)
+	filterM
+		(\(nm, str) -> details3 $ all (\k -> any (isInfixOf k . caseFunction . normalizeText) [takeFileName nm, str]) keywords2)
 		texts
 
 lineNumber idx num (line:lines) = if idx < length line then
