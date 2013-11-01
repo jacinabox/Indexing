@@ -63,7 +63,7 @@ addChunkToIndex logicalName nm idx add = do
 
 index name logicalName idx = catch (do
 	catch (putStrLn name) (\(_ :: IOError) -> return ())
-	let nm = encodeString idx (toUTF logicalName)
+	let nm = newStr idx (toUTF logicalName)
 
 	-- Adding the file's name to the index. We do something
 	-- identical for the body of the file, but it has been
@@ -152,9 +152,9 @@ indexWrapper dir = do
 #ifdef WIN32
 fullIndex = do
 	letters <- driveLetters
-	mapM_ (\dir -> indexDirectory dir dir) letters
+	mapM_ indexWrapper letters
 #else
-fullIndex = indexDirectory "/" "/"
+fullIndex = indexWrapper "/"
 #endif
 
 intersects ls = foldl1 intersect ls
@@ -168,7 +168,7 @@ intersects ls = foldl1 intersect ls
 lookIdxImpl k k2 idx = do
 	f <- first idx
 	ls <- dlookup cmpr k k2 f
-	liftM concat $ mapM (\x -> toList x >>= mapM (liftM fromUTF . decodeString)) ls
+	liftM concat $ mapM (\x -> toList x >>= mapM (liftM fromUTF . str)) ls
 {-# INLINE lookIdxImpl #-}
 
 insertSingle k v ins idx = do
@@ -176,9 +176,9 @@ insertSingle k v ins idx = do
 	f <- first cons
 	if isPair f then do
 		x <- nth 1 f
-		dinsert cmpr2 (encodeString idx k) (newCons ins x) cons
+		dinsert cmpr2 (newStr idx k) (newCons ins x) cons
 	else
-		dinsert cmpr2 (encodeString idx k) (list [ins]) cons
+		dinsert cmpr2 (newStr idx k) (list [ins]) cons
 {-# INLINE insertSingle #-}
 
 -- A pure version of lookIdxImpl. Its use is justified by the fact that we
