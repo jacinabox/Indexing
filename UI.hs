@@ -22,6 +22,7 @@ import System.Process
 import Control.Exception
 import System.IO
 import Indexing
+import Unpacks
 import Split
 
 foreign import stdcall "windows.h CallWindowProcW" callWindowProc :: FunPtr WindowClosure -> HWND -> UINT -> WPARAM -> LPARAM -> IO LRESULT
@@ -340,7 +341,7 @@ main = do
 			fullIndex
 		else do
 			dir <- canonicalizePath (args !! 1)
-			indexWrapper dir
+			indexWrapper (dir ++ [pathDelimiter])
 	else if null keywords then
 		winMain
 	else do
