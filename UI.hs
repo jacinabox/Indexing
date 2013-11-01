@@ -155,9 +155,7 @@ txtProc parent proc wnd msg wParam lParam
 	| msg == wM_GETDLGCODE
 		= return $ dLGC_WANTCHARS .|. dLGC_WANTARROWS
 	| msg == wM_KEYDOWN && wParam `elem` [vK_UP, vK_DOWN, vK_PRIOR, vK_NEXT]
-		= do
-			sendMessage parent (wM_USER + 1) wParam 0
-			proc wnd msg wParam lParam
+		= sendMessage parent (wM_USER + 1) wParam 0
 	| otherwise		= proc wnd msg wParam lParam
 
 doText dc x y s = do
@@ -225,10 +223,10 @@ wndProc resultsRef sortRef scrollRef historyRef wnd msg wParam lParam
 		sortResults sortRef resultsRef
 		writeIORef scrollRef 0
 		invalidateRect (Just wnd) Nothing True
-		return 0
+		return 1
 
 	-- Handler relating to scrolling
-	| msg == wM_USER + 2	= do
+	| msg == wM_USER + 1	= do
 		txt <- getDlgItem wnd txtId
 		btn <- getDlgItem wnd btnId
 		showWindow btn sW_HIDE
@@ -239,24 +237,22 @@ wndProc resultsRef sortRef scrollRef historyRef wnd msg wParam lParam
 		let newScroll = (((nKeywords+1)*textHeight+3*pad)*(fromIntegral (length res)-1)) `min` (0 `max` (scroll + offset))
 		writeIORef scrollRef newScroll
 		when (scroll /= newScroll) (invalidateRect (Just wnd) Nothing True)
-		return 0
+		return 1
 
 	-- Miscellaneous handlers
-	| msg == wM_SETFOCUS	= do
-		{-txt <- getDlgItem wnd txtId
-		setFocus txt-}
-		return 0
 	| msg == wM_INITDIALOG	= do
-		{-txt <- getDlgItem wnd txtId
-		btn <- getDlgItem wnd btnId
 		inst <- getModuleHandle Nothing
+		txt <- createWindow (mkClassName "ComboBox") "" (wS_VISIBLE .|. wS_CHILDWINDOW .|. cBS_HASSTRINGS .|. cBS_DROPDOWN) (Just 0) (Just 0) (Just 100) (Just 10) (Just wnd) Nothing inst (defWindowProc . Just)
+		btn <- createWindow (mkClassName "Button") "Open containing folder" wS_CHILDWINDOW (Just 0) (Just 0) (Just 100) (Just 10) (Just wnd) Nothing inst (defWindowProc . Just)
+		c_SetWindowLongPtr txt gWLP_ID (unsafeCoerce txtId)
+		c_SetWindowLongPtr btn gWLP_ID (unsafeCoerce btnId)
 		readHistory txt historyRef
-		font <- getStockFont aNSI_VAR_FONT
+		font <- makeFont fW_NORMAL
 		edit <- getWindow txt gW_CHILD
 		subclassProc edit (txtProc wnd)
 		sendMessage txt wM_SETFONT (unsafeCoerce font) 1
 	        sendMessage btn wM_SETFONT (unsafeCoerce font) 1
-		setFocus txt-}
+		setFocus txt
 		return 0
 	| msg == wM_SIZE	= catch
 		(do
@@ -324,8 +320,7 @@ winMain = do
 	historyRef <- newIORef []
 	inst <- getModuleHandle Nothing
 	let tmp = DialogTemplate 0 0 640 480 (wS_VISIBLE .|. wS_OVERLAPPEDWINDOW .|. wS_CLIPCHILDREN) 0 (Left 0) (Left 0) (Right "Desktop Search") (Left 0) 14
-		[comboBoxControl 0 0 100 10 (wS_VISIBLE .|. wS_CHILDWINDOW .|. cBS_HASSTRINGS .|. cBS_DROPDOWN) 0 txtId "",
-		pushButtonControl 0 0 100 10 wS_CHILDWINDOW 0 btnId "Open containing folder"]
+		[]
 	tmp2 <- mkDialogFromTemplate tmp
 	dialogBoxIndirect inst tmp2 Nothing (wndProc resultsRef sortRef scrollRef historyRef)
 
