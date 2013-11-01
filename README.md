@@ -3,7 +3,7 @@ Indexing
 
 A desktop search application for Windows. It is able to search within gzip and bzip2 archives.
 
-At present indexing is done manually, by using index -i followed by a directory. Command line output is achieved by entering keywords on the command prompt. Giving no keywords opens the GUI.
+At present indexing is done manually, by using index -i followed by a directory. Command line output is achieved by entering keywords on the command prompt. Giving no keywords opens the GUI. Add +RTS -N after any actual parameters, to get parallelism in the executable.
 
 An overview of the components of this project:
 
@@ -16,7 +16,7 @@ An overview of the components of this project:
 
 To build the application, use
 
-ghc UI.hs -o Index -O2 -DWIN32
+ghc UI.hs -o Index -O2 -DWIN32 -threaded
 
 Hard problems to solve with this project:
 
