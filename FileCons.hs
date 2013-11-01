@@ -5,14 +5,13 @@ module FileCons (Cons, openHandle, closeHandle, newCons, newInt, isPair, first, 
 import System.IO.Unsafe
 import Control.Monad
 import Data.Bits
-import Data.Word
+import Data.Char
 import Foreign.Ptr
 import Foreign.Storable
 import Data.IORef
 import System.IO
 import Control.Exception
 import System.IO.MMap
-import Data.String.UTF8 (toString, fromString, toRep, fromRep)
 import Prelude hiding (catch)
 
 -- This module stores a single value in a file. The value is a tree structure like Lisp's
@@ -147,31 +146,21 @@ nth 0 cons = first cons
 nth n cons = second cons >>= nth (n - 1)
 {-# INLINE nth #-}
 
-padWithZeros :: [Int] -> [Int]
-padWithZeros s = s ++ replicate (3 - length s `mod` 3) 0
+padWithZeros s = s ++ replicate (3 - length s `mod` 3) '\0'
 {-# INLINE padWithZeros #-}
 
-removeZeros :: [Int] -> [Int]
-removeZeros s = reverse (dropWhile (==0) (reverse s))
+removeZeros s = reverse (dropWhile (=='\0') (reverse s))
 {-# INLINE removeZeros #-}
 
-pack :: [Int] -> [Int]
 pack (c1 : c2 : c3 : xs) = (shiftL c1 16 .|. shiftL c2 8 .|. c3) : pack xs
 pack [] = []
 
-unpack :: [Int] -> [Int]
 unpack (n:ns) = shiftR n 16 : (shiftR n 8 .&. 255) : (n .&. 255) : unpack ns
 unpack [] = []
 
-toUTF :: String -> [Int]
-toUTF s = map fromIntegral (toRep $ fromString s :: [Word8])
+encodeString hdl s = list $ map (newInt hdl) $ pack $ map ord $ padWithZeros s
 
-fromUTF :: [Int] -> String
-fromUTF s = toString $ fromRep (map fromIntegral s :: [Word8])
-
-encodeString hdl s = list $ map (newInt hdl) $ pack $ padWithZeros $ toUTF s
-
-decodeString cons = liftM (fromUTF . removeZeros . unpack . map int) (toList cons)
+decodeString cons = liftM (removeZeros . map chr . unpack . map int) (toList cons)
 {-# INLINE decodeString #-}
 
 shw cons = if isPair cons then
