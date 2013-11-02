@@ -7,6 +7,7 @@ import Control.Monad
 import System.Directory
 import Data.Char
 import Data.Word
+import Data.Map (fromList, singleton, unionWith, intersectionWith, assocs, empty)
 import System.IO
 import Data.Function
 import System.Environment
@@ -30,6 +31,9 @@ import Driveletters
 toUTF s = map (chr . fromIntegral) (toRep $ fromString s :: [Word8])
 
 fromUTF s = toString $ fromRep (map (fromIntegral . ord) s :: [Word8])
+
+hGetStr _ 0 = return []
+hGetStr h n = liftM2 (:) (hGetChar h) (hGetStr h (n - 1))
 
 toUpperCase s = map toUpper s
 
@@ -69,7 +73,7 @@ index name logicalName idx = catch (do
 	-- identical for the body of the file, but it has been
 	-- optimized to not use /indexAddition/.
 	mapM_
-		(addChunkToIndex logicalName nm idx)
+		(addChunkToIndex logicalName (newCons nm (newInt idx 0)) idx)
 		(indexAddition (normalizeText (toUTF (takeFileName name))))
 
 	-- Checks to see if the file is binary. If so, we skip it.
@@ -94,17 +98,19 @@ index name logicalName idx = catch (do
 		-- with the given file.
 		fl <- openBinaryFile name ReadMode
 		sz <- hFileSize fl
-		let loop n = when (n >= 5) $ do
-			c1 <- hGetChar fl
-			c2 <- hGetChar fl
-			c3 <- hGetChar fl
-			c4 <- hGetChar fl
-			c5 <- hGetChar fl
-			addChunkToIndex logicalName nm idx (toUpperCase (normalizeText [c1, c2, c3, c4, c5]))
-			loop (n - 5)
-		loop (fromInteger sz)
+		let loop n = if n + 5 >= fromInteger sz then
+				return n
+			else do
+				c1 <- hGetChar fl
+				c2 <- hGetChar fl
+				c3 <- hGetChar fl
+				c4 <- hGetChar fl
+				c5 <- hGetChar fl
+				addChunkToIndex logicalName (newCons nm (newInt idx n)) idx (toUpperCase (normalizeText [c1, c2, c3, c4, c5]))
+				loop (n + 5)
+		m <- loop 0
 		remaining <- hGetContents fl
-		addChunkToIndex logicalName nm idx (toUpperCase remaining ++ replicate (5 - length remaining) ' ')
+		addChunkToIndex logicalName (newCons nm (newInt idx m)) idx (toUpperCase remaining ++ replicate (5 - length remaining) ' ')
 		hClose fl)
 	(\(er :: IOError) -> putStrLn (":::" ++ show er))
 
@@ -157,18 +163,17 @@ fullIndex = do
 fullIndex = indexWrapper "/"
 #endif
 
-intersects ls = foldl1 intersect ls
-
 -- The process of doing a keyword search:
 --   lookKeywords deals with all the keywords the user has entered,
 --   look deals with a single keyword, breaking it up into 5-letter pieces.
 --   lookIdx searches for a single 5-letter piece in the index.
 
 -- Returns all the files associated with the given key range.
+lookIdxImpl :: String -> String -> Cons -> IO [(String, Int)]
 lookIdxImpl k k2 idx = do
 	f <- first idx
 	ls <- dlookup cmpr k k2 f
-	liftM concat $ mapM (\x -> toList x >>= mapM (liftM fromUTF . str)) ls
+	liftM concat $ mapM (\x -> toList x >>= mapM (\x -> liftM2 (,) (first x >>= str) (liftM int (second x)))) ls
 {-# INLINE lookIdxImpl #-}
 
 insertSingle k v ins idx = do
@@ -185,19 +190,25 @@ insertSingle k v ins idx = do
 -- are doing queries only, so the contents of the index are unlikely to change.
 lookIdx k k2 idx = unsafePerformIO (lookIdxImpl k k2 idx)
 
+intersects ls = foldl1 intersect ls
+
 max' f x1 x2
 	| f x1 > f x2	= x1
 	| otherwise	= x2
 
 look keyword idx = concat ((do
 		window <- map (\n -> max' length (drop n keyword) (reverse (take n keyword))) [0..4]
-		return $ intersects $ do
+		let x:xs = do
 			chunk <- chunks 5 window
-			return (lookIdx chunk (chunk ++ replicate (5 - length chunk) (chr 255)) idx))
+			return (lookIdx chunk (chunk ++ replicate (5 - length chunk) (chr 255)) idx)
+		return $ if null xs then
+				x
+			else let ys = intersects $ map (map fst) xs in
+				filter (\(s, _) -> s `elem` ys) x)
 		`using` parList (evalList rseq))
 	`mplus` if length keyword == 3 then do
-			chr <- [' '..chr 255]
-			lookIdx (chr : keyword) (chr : keyword ++ "~") idx
+			c <- [' '..chr 255]
+			lookIdx (c : keyword) (c : keyword ++ [chr 255]) idx
 		else
 			mzero
 
@@ -207,34 +218,40 @@ extractText name = do
 		(\path logicalPath -> liftM (++logicalPath) (fromJust (lookup (takeExtension path) unpacks) path))
 		(head paths)
 		(tail paths)
-	fl <- openBinaryFile finalPath ReadMode
-	hGetContents fl
+	openBinaryFile finalPath ReadMode
+
+doIntersect ls =  ls
 
 -- First it acquires a list, /possibilities/, which is a superset of the correct
--- results. Then it winnows this list down by searching for the keywords
--- in the texts of the files.
+-- results. Then it filters this list by looking for the keywords at the
+-- positions specified in the index.
 lookKeywords keywords caseSensitive = do
 	idxNm <- indexFileName
 	keywords <- return $ map (normalizeText . toUTF) keywords
-	let longKeywords = filter ((>=5) . length) keywords
 	idx <- openHandle idxNm
-	let possibilities = nub $ intersects ((map ((`look` idx) . toUpperCase)
-		$ if null longKeywords then keywords else longKeywords)
-		`using` parList (evalList rseq))
-	texts <- mapM (\nm -> liftM (\str -> (nm, str)) (catch
-			(extractText nm)
-			(\(er :: IOError) -> do
-				putStrLn (":::" ++ show er)
-				return "")))
-		possibilities
-	closeHandle idx
+	let possibilities = assocs $ foldl1 (intersectionWith (++)) $
+		map (\k -> fmap (\x -> [x]) $ foldl (unionWith (++)) empty $ map (\(x, y) -> singleton x [y]) $ look (toUpperCase k) idx)
+			keywords
 	let caseFunction = if caseSensitive then id else toUpperCase
 	let keywords2 = map caseFunction keywords
-	let selected = map
-		(\(nm, str) -> all (\k -> any (isInfixOf k . caseFunction . normalizeText) [toUTF (takeFileName nm), str]) keywords2)
-		texts
-		`using` parList rseq
-	return $ map snd $ filter fst $ zip selected texts
+	texts <- mapM (\(nm, ls) -> catch
+			(do
+				h <- extractText nm
+				b <- liftM and $ mapM (\(k, ns) -> liftM ((|| isInfixOf k (caseFunction nm)) . or) $ mapM (\n -> do
+						hSeek h AbsoluteSeek (toInteger ((n - 4) `max` 0))
+						s <- hGetStr h (4 + length k)
+						return $ isInfixOf k (caseFunction s))
+						ns)
+					(zip keywords2 ls)
+				hSeek h AbsoluteSeek 0
+				contents <- hGetContents h
+				return ((nm, contents), b))
+			(\(er :: IOError) -> do
+				putStrLn (":::" ++ show er)
+				return (undefined, False)))
+		possibilities
+	closeHandle idx
+	return $ map fst $ filter snd texts
 
 lineNumber idx num (line:lines) = if idx < length line then
 		num

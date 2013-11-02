@@ -1,6 +1,6 @@
 {-# LANGUAGE CPP, ScopedTypeVariables #-}
 
-module FileCons (Cons, openHandle, closeHandle, newCons, newStr, isPair, isNil, first, second, setFirst, setSecond, str, getPtr, list, toList, nth, shw, cmpr, cmpr2, dlookup, lookupSingle, dinsert, deleteFindMin, deleteFindMax, delete, depth, size) where
+module FileCons (Cons, openHandle, closeHandle, newCons, newInt, newStr, isPair, first, second, setFirst, setSecond, int, str, getPtr, list, toList, nth, shw, cmpr, cmpr2, dlookup, lookupSingle, dinsert, deleteFindMin, deleteFindMax, delete, depth, size) where
 
 import System.IO.Unsafe
 import Control.Monad
@@ -27,7 +27,7 @@ openHandle path = do
 	(p, sz, _, _) <- mmapFilePtr path ReadWrite Nothing
 	ref <- newIORef (p, sz, sz)
 	let cons = Cons path ref 0
-	when (sz == 0) $ newCons (nil cons) (nil cons) `seq` newStr cons [] `seq` return ()
+	when (sz == 0) $ newCons (newInt cons 0) (newInt cons 0) `seq` return ()
 	return cons
 
 closeHandle (Cons path ref _) = do
@@ -61,31 +61,37 @@ newCons cons@(Cons path ref i) (Cons path2 _ j)
 		return $! Cons path ref used
 {-# INLINE newCons #-}
 
+newInt cons@(Cons path ref _) n = Cons path ref (-(n + 1))
+{-# INLINE newInt #-}
+
 newStr cons@(Cons path ref _) s = unsafePerformIO $ do
 	(p, used) <- makeSpace cons (length s + 5)
-	poke (p `plusPtr` used) (-1 :: Int)
+	poke (p `plusPtr` used) (4 :: Int)
 	let
 		loop p (x:xs) = do
 			poke p x
 			loop (p `plusPtr` 1) xs
 		loop p [] = poke p 0
 	loop (castPtr $ p `plusPtr` (used + 4) :: Ptr Word8) (map (fromIntegral . ord) s)
-	return $! Cons path ref (-(used + 1))
+	return $! Cons path ref used
 
-nil (Cons path ref _) = Cons path ref (-9)
-{-# INLINE nil #-}
+isInt (Cons _ _ i) = i < 0
+{-# INLINE isInt #-}
 
-isPair (Cons _ _ i) = i >= 0
+isStr (Cons _ ref i) = unsafePerformIO $ do
+	(p, _, _) <- readIORef ref
+	n <- peek (p `plusPtr` i)
+	return (n == (4 :: Int))
+{-# INLINE isStr #-}
+
+isPair c = not (isInt c || isStr c)
 {-# INLINE isPair #-}
-
-isNil (Cons _ _ i) = i == -9
-{-# INLINE isNil #-}
 
 first c@(Cons path ref i)
 #ifdef DEBUG
-	| i < 0		= do
-		s <- str c
-		error $ "first: not a pair: " ++ show s
+	| not (isPair c)	= do
+		s <- shw c
+		error $ "first: not a pair: " ++ s
 #endif
 	| otherwise	= do
 		(p, _, _) <- readIORef ref
@@ -95,9 +101,9 @@ first c@(Cons path ref i)
 
 second c@(Cons path ref i)
 #ifdef DEBUG
-	| i < 0		= do
-		s <- str c
-		error $ "second: not a pair: " ++ show s
+	| not (isPair c)	= do
+		s <- shw c
+		error $ "second: not a pair: " ++ s
 #endif
 	| otherwise	= do
 		(p, _, _) <- readIORef ref
@@ -105,22 +111,27 @@ second c@(Cons path ref i)
 		return $! Cons path ref n
 {-# INLINE second #-}
 
+int c@(Cons _ _ i)
+#ifdef DEBUG
+	| i >= 0	= error $ "int: not an int: " ++ unsafePerformIO (shw c)
+#endif
+	| otherwise	= -(i + 1)
+
 str c@(Cons _ ref i)
 #ifdef DEBUG
-	| i >= 0	= do
+	| not (isStr c)	= do
 		s <- shw c
 		error $ "str: not an str: " ++ s
 #endif
 	| otherwise	= do
 		(p, _, _) <- readIORef ref
-		let j = -(i + 1) + 4
 		let loop p acc = do
 			c <- peek p
 			if c == 0 then
 				return (reverse acc)
 			else
 				loop (p `plusPtr` 1) (c : acc)
-		liftM (map (chr . fromIntegral)) $ loop (castPtr $ p `plusPtr` j :: Ptr Word8) []
+		liftM (map (chr . fromIntegral)) $ loop (castPtr $ p `plusPtr` (i + 4) :: Ptr Word8) []
 {-# INLINE str #-}
 
 getPtr (Cons _ _ i) = i
@@ -128,7 +139,7 @@ getPtr (Cons _ _ i) = i
 
 setFirst c@(Cons path ref i) (Cons path2 _ j)
 #ifdef DEBUG
-	| i < 0		= do
+	| not (isPair c)	= do
 		s <- str c
 		error $ "setFirst: not a pair: " ++ show s
 	| path /= path2	= error "setFirst: have to come from same file"
@@ -140,7 +151,7 @@ setFirst c@(Cons path ref i) (Cons path2 _ j)
 
 setSecond c@(Cons path ref i) (Cons path2 _ j)
 #ifdef DEBUG
-	| i < 0		= do
+	| not (isPair c)	= do
 		s <- str c
 		error $ "setSecond: not a pair: " ++ show s
 	| path /= path2	= error "setSecond: have to come from same file"
@@ -150,7 +161,7 @@ setSecond c@(Cons path ref i) (Cons path2 _ j)
 		poke (p `plusPtr` (i + 4)) j
 {-# INLINE setSecond #-}
 
-list [x] = newCons x (nil x)
+list [x] = newCons x (newInt x 0)
 list (x:xs) = newCons x (list xs)
 
 toList = rec [] where
@@ -166,13 +177,14 @@ nth 0 cons = first cons
 nth n cons = second cons >>= nth (n - 1)
 {-# INLINE nth #-}
 
-shw cons = if isPair cons then
-		do
+shw cons = if isInt cons then
+		return (show (int cons))
+	else if isStr cons then
+		liftM show (str cons)
+	else do
 		f <- first cons >>= shw
 		s <- second cons >>= shw
 		return $ "Cons (" ++ f ++ ") (" ++ s ++ ")"
-	else
-		liftM show (str cons)
 
 cmpr s c = liftM (compare s) (str c)
 
@@ -226,7 +238,7 @@ dinsert cmp kx x t = do
 			EQ -> do
 				second referent >>= \s -> setFirst s x
 	else
-		setFirst t (list [kx, x, nil x, nil x])
+		setFirst t (list [kx, x, newInt x 0, newInt x 0])
 
 deleteFindMin t = do
 	l <- first t >>= second >>= second
@@ -276,7 +288,7 @@ delete cmpr k t = do
 				setFirst referent k
 				setFirst val x
 			else
-				setFirst t (nil t)
+				setFirst t (newInt t 0)
 
 depth idx = if isPair idx then
 	liftM2 (\x y -> 1 + max x y) (nth 2 idx >>= depth) (nth 3 idx >>= depth)
