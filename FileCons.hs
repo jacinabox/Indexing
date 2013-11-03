@@ -13,6 +13,7 @@ import Data.IORef
 import System.IO
 import Control.Exception
 import System.IO.MMap
+import Data.String.UTF8 (toRep, fromRep, toString, fromString)
 import Prelude hiding (catch)
 
 -- This module stores a single value in a file. The value is a tree structure like Lisp's
@@ -20,6 +21,12 @@ import Prelude hiding (catch)
 -- that were once in the file.
 
 data Cons = Cons !FilePath !(IORef (Ptr Int, Int, Int)) !Int deriving Eq
+
+toUTF :: String -> [Word8]
+toUTF = toRep . fromString
+
+fromUTF :: [Word8] -> String
+fromUTF = toString . fromRep
 
 openHandle path = do
 	fl <- openBinaryFile path ReadWriteMode
@@ -72,7 +79,7 @@ newStr cons@(Cons path ref _) s = unsafePerformIO $ do
 			poke p x
 			loop (p `plusPtr` 1) xs
 		loop p [] = poke p 0
-	loop (castPtr $ p `plusPtr` (used + 4) :: Ptr Word8) (map (fromIntegral . ord) s)
+	loop (castPtr $ p `plusPtr` (used + 4) :: Ptr Word8) (map fromIntegral (toUTF s))
 	return $! Cons path ref used
 
 isInt (Cons _ _ i) = i < 0
@@ -131,7 +138,7 @@ str c@(Cons _ ref i)
 				return (reverse acc)
 			else
 				loop (p `plusPtr` 1) (c : acc)
-		liftM (map (chr . fromIntegral)) $ loop (castPtr $ p `plusPtr` (i + 4) :: Ptr Word8) []
+		liftM (fromUTF . map fromIntegral) $ loop (castPtr $ p `plusPtr` (i + 4) :: Ptr Word8) []
 {-# INLINE str #-}
 
 getPtr (Cons _ _ i) = i

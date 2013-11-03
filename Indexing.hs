@@ -5,10 +5,8 @@ module Indexing (indexFileName, indexWrapper, fullIndex, lookKeywords, contexts,
 import Data.List hiding (union, insert)
 import Control.Monad
 import System.Directory
-import Data.Char
-import Data.Word
-import Data.Map (fromList, singleton, unionWith, intersectionWith, assocs, empty)
 import System.IO
+import Data.Char
 import Data.Function
 import System.Environment
 import Data.IORef
@@ -16,24 +14,14 @@ import System.FilePath
 import Control.Exception
 import Data.Maybe
 import System.IO.Error
-import Control.Parallel.Strategies
 import Prelude hiding (catch)
 import FileCons
 import Replace
 import Split
-import Data.String.UTF8 (toString, fromString, toRep, fromRep)
-import System.IO.Unsafe
 
 import Unpacks
 import Normalize
 import Driveletters
-
-toUTF s = map (chr . fromIntegral) (toRep $ fromString s :: [Word8])
-
-fromUTF s = toString $ fromRep (map (fromIntegral . ord) s :: [Word8])
-
-hGetStr _ 0 = return []
-hGetStr h n = liftM2 (:) (hGetChar h) (hGetStr h (n - 1))
 
 toUpperCase s = map toUpper s
 
@@ -45,7 +33,9 @@ chunks n ls
 	| length ls < n	= [ls]
 	| otherwise	= chunks0 n ls
 
-indexAddition text = concatMap (\chnk -> [chnk, reverse chnk]) $ chunks0 5 $ toUpperCase text ++ "   "
+windows n ls = map (\ls2 -> ls2 ++ replicate (n - length ls2) ' ') $ filter ((>2) . length) $ map (take n) $ tails ls
+
+indexAddition text = windows 5 $ toUpperCase $ normalizeText text
 
 isPrintable c = ord c >= 32 || c == '\t' || c == '\n' || c == '\r'
 
@@ -53,11 +43,6 @@ indexFileName = do
 	dir <- getAppUserDataDirectory "Index"
 	createDirectoryIfMissing False dir
 	return (dir ++ pathDelimiter : "Index.dat")
-
-addChunkToIndex logicalName nm idx add = do
-	insertSingle add (toUTF logicalName) nm idx
-	insertSingle (reverse add) (toUTF logicalName) nm idx
-{-# INLINE addChunkToIndex #-}
 
 -- We maintain a distinction between "names" and "logical names," in order
 -- to handle files that have been unpacked from archives. The logical names
@@ -67,14 +52,14 @@ addChunkToIndex logicalName nm idx add = do
 
 index name logicalName idx = catch (do
 	catch (putStrLn name) (\(_ :: IOError) -> return ())
-	let nm = newStr idx (toUTF logicalName)
+	let nm = newStr idx logicalName
 
-	-- Adding the file's name to the index. We do something
-	-- identical for the body of the file, but it has been
+	-- Adding the file's name to the index. Something identical
+	-- is done for the body of the file, but it has been
 	-- optimized to not use /indexAddition/.
 	mapM_
-		(addChunkToIndex logicalName (newCons nm (newInt idx 0)) idx)
-		(indexAddition (normalizeText (toUTF (takeFileName name))))
+		(\add -> insertSingle add logicalName nm idx)
+		(indexAddition (takeFileName name))
 
 	-- Checks to see if the file is binary. If so, we skip it.
 	fl <- openBinaryFile name ReadMode
@@ -94,23 +79,27 @@ index name logicalName idx = catch (do
 	hClose fl
 
 	when printable $ do
-		-- Breaks the file up into 5-letter chunks and associates these chunks
-		-- with the given file.
-		fl <- openBinaryFile name ReadMode
-		sz <- hFileSize fl
-		let loop n = if n + 5 >= fromInteger sz then
-				return n
-			else do
-				c1 <- hGetChar fl
-				c2 <- hGetChar fl
-				c3 <- hGetChar fl
-				c4 <- hGetChar fl
-				c5 <- hGetChar fl
-				addChunkToIndex logicalName (newCons nm (newInt idx n)) idx (toUpperCase (normalizeText [c1, c2, c3, c4, c5]))
-				loop (n + 5)
-		m <- loop 0
-		remaining <- hGetContents fl
-		addChunkToIndex logicalName (newCons nm (newInt idx m)) idx (toUpperCase remaining ++ replicate (5 - length remaining) ' ')
+		-- Associates each suffix array with the given file.
+		fl <- openFile name ReadMode
+		hSetEncoding fl utf8
+		c1 <- hGetChar fl
+		c2 <- hGetChar fl
+		c3 <- hGetChar fl
+		c4 <- hGetChar fl
+		c5 <- hGetChar fl
+		let s = toUpperCase (normalizeText [c1, c2, c3, c4, c5])
+		insertSingle s logicalName nm idx
+		let loop s = do
+			b <- hIsEOF fl
+			if b then do
+					insertSingle (tail s ++ " ") logicalName nm idx
+					insertSingle (drop 2 s ++ "  ") logicalName nm idx
+				else do
+					c <- hGetChar fl
+					let s2 = tail s ++ toUpperCase (normalizeText [c])
+					insertSingle s2 logicalName nm idx
+					loop s2
+		loop s
 		hClose fl)
 	(\(er :: IOError) -> putStrLn (":::" ++ show er))
 
@@ -163,18 +152,19 @@ fullIndex = do
 fullIndex = indexWrapper "/"
 #endif
 
+intersects ls = foldl1 intersect ls
+
 -- The process of doing a keyword search:
 --   lookKeywords deals with all the keywords the user has entered,
 --   look deals with a single keyword, breaking it up into 5-letter pieces.
 --   lookIdx searches for a single 5-letter piece in the index.
 
 -- Returns all the files associated with the given key range.
-lookIdxImpl :: String -> String -> Cons -> IO [(String, Int)]
-lookIdxImpl k k2 idx = do
+lookIdx k k2 idx = do
 	f <- first idx
 	ls <- dlookup cmpr k k2 f
-	liftM concat $ mapM (\x -> toList x >>= mapM (\x -> liftM2 (,) (first x >>= str) (liftM int (second x)))) ls
-{-# INLINE lookIdxImpl #-}
+	liftM concat $ mapM (\x -> toList x >>= mapM str) ls
+{-# INLINE lookIdx #-}
 
 insertSingle k v ins idx = do
 	cons <- lookupSingle cmpr k idx
@@ -186,31 +176,7 @@ insertSingle k v ins idx = do
 		dinsert cmpr2 (newStr idx k) (list [ins]) cons
 {-# INLINE insertSingle #-}
 
--- A pure version of lookIdxImpl. Its use is justified by the fact that we
--- are doing queries only, so the contents of the index are unlikely to change.
-lookIdx k k2 idx = unsafePerformIO (lookIdxImpl k k2 idx)
-
-intersects ls = foldl1 intersect ls
-
-max' f x1 x2
-	| f x1 > f x2	= x1
-	| otherwise	= x2
-
-look keyword idx = concat ((do
-		window <- map (\n -> max' length (drop n keyword) (reverse (take n keyword))) [0..4]
-		let x:xs = do
-			chunk <- chunks 5 window
-			return (lookIdx chunk (chunk ++ replicate (5 - length chunk) (chr 255)) idx)
-		return $ if null xs then
-				x
-			else let ys = intersects $ map (map fst) xs in
-				filter (\(s, _) -> s `elem` ys) x)
-		`using` parList (evalList rseq))
-	`mplus` if length keyword == 3 then do
-			c <- [' '..chr 255]
-			lookIdx (c : keyword) (c : keyword ++ [chr 255]) idx
-		else
-			mzero
+look keyword idx = liftM intersects $ mapM (\chunk -> lookIdx chunk (chunk ++ replicate (5 - length chunk) (chr 32767)) idx) (chunks 5 keyword)
 
 extractText name = do
 	let paths = split '@' name
@@ -218,40 +184,36 @@ extractText name = do
 		(\path logicalPath -> liftM (++logicalPath) (fromJust (lookup (takeExtension path) unpacks) path))
 		(head paths)
 		(tail paths)
-	openBinaryFile finalPath ReadMode
+	fl <- openFile finalPath ReadMode
+	hSetEncoding fl utf8
+	hGetContents fl
 
-doIntersect ls =  ls
+details3 code = catch
+	(return $! code)
+	(\(er :: IOError) -> do
+		putStrLn (":::" ++ show er)
+		return False)
 
 -- First it acquires a list, /possibilities/, which is a superset of the correct
--- results. Then it filters this list by looking for the keywords at the
--- positions specified in the index.
+-- results. Then it winnows this list down by searching for the keywords
+-- in the texts of the files.
 lookKeywords keywords caseSensitive = do
 	idxNm <- indexFileName
-	keywords <- return $ map (normalizeText . toUTF) keywords
+	keywords <- return $ map normalizeText keywords
 	idx <- openHandle idxNm
-	let possibilities = assocs $ foldl1 (intersectionWith (++)) $
-		map (\k -> fmap (\x -> [x]) $ foldl (unionWith (++)) empty $ map (\(x, y) -> singleton x [y]) $ look (toUpperCase k) idx)
-			keywords
-	let caseFunction = if caseSensitive then id else toUpperCase
-	let keywords2 = map caseFunction keywords
-	texts <- mapM (\(nm, ls) -> catch
-			(do
-				h <- extractText nm
-				b <- liftM and $ mapM (\(k, ns) -> liftM ((|| isInfixOf k (caseFunction nm)) . or) $ mapM (\n -> do
-						hSeek h AbsoluteSeek (toInteger ((n - 4) `max` 0))
-						s <- hGetStr h (4 + length k)
-						return $ isInfixOf k (caseFunction s))
-						ns)
-					(zip keywords2 ls)
-				hSeek h AbsoluteSeek 0
-				contents <- hGetContents h
-				return ((nm, contents), b))
+	possibilities <- liftM (nub . intersects) (mapM ((`look` idx) . toUpperCase) keywords)
+	texts <- mapM (\nm -> liftM (\str -> (nm, str)) (catch
+			(extractText nm)
 			(\(er :: IOError) -> do
 				putStrLn (":::" ++ show er)
-				return (undefined, False)))
+				return "")))
 		possibilities
 	closeHandle idx
-	return $ map fst $ filter snd texts
+	let caseFunction = if caseSensitive then id else toUpperCase
+	let keywords2 = map caseFunction keywords
+	filterM
+		(\(nm, str) -> details3 $ all (\k -> any (isInfixOf k . caseFunction . normalizeText) [takeFileName nm, str]) keywords2)
+		texts
 
 lineNumber idx num (line:lines) = if idx < length line then
 		num
