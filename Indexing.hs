@@ -54,9 +54,7 @@ index name logicalName idx = catch (do
 	catch (putStrLn name) (\(_ :: IOError) -> return ())
 	let nm = newStr idx logicalName
 
-	-- Adding the file's name to the index. Something identical
-	-- is done for the body of the file, but it has been
-	-- optimized to not use /indexAddition/.
+	-- Adding the file's name to the index.
 	mapM_
 		(\add -> insertSingle add logicalName nm idx)
 		(indexAddition (takeFileName name))
@@ -79,7 +77,7 @@ index name logicalName idx = catch (do
 	hClose fl
 
 	when printable $ do
-		-- Associates each suffix array with the given file.
+		-- Associates each window with the given file.
 		fl <- openFile name ReadMode
 		hSetEncoding fl utf8
 		c1 <- hGetChar fl
@@ -91,12 +89,16 @@ index name logicalName idx = catch (do
 		insertSingle s logicalName nm idx
 		let loop s = do
 			b <- hIsEOF fl
-			if b then do
-					insertSingle (tail s ++ " ") logicalName nm idx
-					insertSingle (drop 2 s ++ "  ") logicalName nm idx
+			if b then
+				insertSingle (drop 2 s ++ "  ") logicalName nm idx
+			else do
+				c1 <- hGetChar fl
+				b <- hIsEOF fl
+				if b then
+					insertSingle (drop 2 s ++ c1 : " ") logicalName nm idx
 				else do
-					c <- hGetChar fl
-					let s2 = tail s ++ toUpperCase (normalizeText [c])
+					c2 <- hGetChar fl
+					let s2 = drop 2 s ++ toUpperCase (normalizeText [c1, c2])
 					insertSingle s2 logicalName nm idx
 					loop s2
 		loop s
@@ -176,7 +178,9 @@ insertSingle k v ins idx = do
 		dinsert cmpr2 (newStr idx k) (list [ins]) cons
 {-# INLINE insertSingle #-}
 
-look keyword idx = liftM intersects $ mapM (\chunk -> lookIdx chunk (chunk ++ replicate (5 - length chunk) (chr 32767)) idx) (chunks 5 keyword)
+look keyword idx = liftM concat $ mapM
+	(\wnd -> liftM intersects $ mapM (\chunk -> lookIdx chunk (chunk ++ replicate (5 - length chunk) (chr 32767)) idx) (chunks 5 wnd))
+	[keyword, tail keyword]
 
 extractText name = do
 	let paths = split '@' name
