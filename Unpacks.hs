@@ -1,6 +1,6 @@
 {-# LANGUAGE CPP, ScopedTypeVariables #-}
 
-module Unpacks (unpacks, pathDelimiter) where
+module Unpacks (unpacks, pathDelimiter, appendDelimiter) where
 
 import Data.List
 import Data.Char
@@ -17,6 +17,10 @@ pathDelimiter = '\\'
 #else
 pathDelimiter = '/'
 #endif
+
+appendDelimiter s
+	| last s `elem` "\\/"	= s
+	| otherwise		= s ++ [pathDelimiter]
 
 convertHtml0 ('<':xs) = convertHtml0 $ tail $ snd $ break (=='>') xs
 convertHtml0 ('&':'#':xs) = chr (read num) : convertHtml0 (tail rest)

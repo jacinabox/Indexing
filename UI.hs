@@ -341,7 +341,7 @@ main = do
 			fullIndex
 		else do
 			dir <- canonicalizePath (args !! 1)
-			indexWrapper (dir ++ [pathDelimiter])
+			indexWrapper (appendDelimiter dir)
 	else if null keywords then
 		winMain
 	else do

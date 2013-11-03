@@ -182,6 +182,10 @@ look keyword idx = liftM concat $ mapM
 	(\wnd -> liftM intersects $ mapM (\chunk -> lookIdx chunk (chunk ++ replicate (5 - length chunk) (chr 32767)) idx) (chunks 5 wnd))
 	[keyword, tail keyword]
 
+doLazyIO :: String -> ()
+doLazyIO [] = ()
+doLazyIO ls = last ls `seq` ()
+
 extractText name = do
 	let paths = split '@' name
 	finalPath <- foldM
@@ -190,13 +194,9 @@ extractText name = do
 		(tail paths)
 	fl <- openFile finalPath ReadMode
 	hSetEncoding fl utf8
-	hGetContents fl
-
-details3 code = catch
-	(return $! code)
-	(\(er :: IOError) -> do
-		putStrLn (":::" ++ show er)
-		return False)
+	contents <- hGetContents fl
+	doLazyIO contents `seq` hClose fl
+	return contents
 
 -- First it acquires a list, /possibilities/, which is a superset of the correct
 -- results. Then it winnows this list down by searching for the keywords
@@ -215,8 +215,8 @@ lookKeywords keywords caseSensitive = do
 	closeHandle idx
 	let caseFunction = if caseSensitive then id else toUpperCase
 	let keywords2 = map caseFunction keywords
-	filterM
-		(\(nm, str) -> details3 $ all (\k -> any (isInfixOf k . caseFunction . normalizeText) [takeFileName nm, str]) keywords2)
+	return $ filter
+		(\(nm, str) -> all (\k -> any (isInfixOf k . caseFunction . normalizeText) [takeFileName nm, str]) keywords2)
 		texts
 
 lineNumber idx num (line:lines) = if idx < length line then
