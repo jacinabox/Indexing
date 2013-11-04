@@ -37,12 +37,30 @@ windows n ls = map (\ls2 -> ls2 ++ replicate (n - length ls2) ' ') $ filter ((>2
 
 indexAddition text = windows 5 $ toUpperCase $ normalizeText text
 
-isPrintable c = ord c >= 32 || c == '\t' || c == '\n' || c == '\r'
-
 indexFileName = do
 	dir <- getAppUserDataDirectory "Index"
 	createDirectoryIfMissing False dir
 	return (dir ++ pathDelimiter : "Index.dat")
+
+isPrintableChar c = ord c >= 32 || c == '\t' || c == '\n' || c == '\r'
+
+isPrintable name = do
+	fl <- openBinaryFile name ReadMode
+	let
+		loop 0 = return True
+		loop n = do
+			b <- hIsEOF fl
+			if b then
+				return True
+			else do
+				c <- hGetChar fl
+				if isPrintableChar c then
+					loop (n - 1)
+				else
+					return False
+	printable <- loop 500
+	hClose fl
+	return printable
 
 -- We maintain a distinction between "names" and "logical names," in order
 -- to handle files that have been unpacked from archives. The logical names
@@ -60,21 +78,7 @@ index name logicalName idx = catch (do
 		(indexAddition (takeFileName name))
 
 	-- Checks to see if the file is binary. If so, we skip it.
-	fl <- openBinaryFile name ReadMode
-	let
-		loop 0 = return True
-		loop n = do
-			b <- hIsEOF fl
-			if b then
-				return True
-			else do
-				c <- hGetChar fl
-				if isPrintable c then
-					loop (n - 1)
-				else
-					return False
-	printable <- loop 500
-	hClose fl
+	printable <- isPrintable name
 
 	when printable $ do
 		-- Associates each window with the given file.
@@ -95,8 +99,8 @@ index name logicalName idx = catch (do
 				c1 <- hGetChar fl
 				b <- hIsEOF fl
 				if b then do
-					insertSingle (drop 2 s ++ c1 : " ") logicalName nm idx
-					insertSingle (drop 4 s ++ c1 : "   ") logicalName nm idx
+					insertSingle (drop 2 s ++ normalizeText [c1] ++ " ") logicalName nm idx
+					insertSingle (drop 4 s ++ normalizeText [c1] ++ "   ") logicalName nm idx
 				else do
 					c2 <- hGetChar fl
 					let s2 = drop 2 s ++ toUpperCase (normalizeText [c1, c2])
@@ -208,7 +212,12 @@ lookKeywords keywords caseSensitive = do
 	idx <- openHandle idxNm
 	possibilities <- liftM (nub . intersects) (mapM ((`look` idx) . toUpperCase) keywords)
 	texts <- mapM (\nm -> liftM (\str -> (nm, str)) (catch
-			(extractText nm)
+			(do
+				printable <- isPrintable nm
+				if printable then
+					extractText nm
+				else
+					return "")
 			(\(er :: IOError) -> do
 				putStrLn (":::" ++ show er)
 				return "")))
@@ -229,7 +238,7 @@ pad n s = replicate (n - length s) ' ' ++ s
 
 contexts keywords text caseSensitive = catMaybes $ map (\k -> case findIndex (\suffix -> isPrefixOf (caseFunction k) suffix) (tails (caseFunction text)) of
 		Just i -> let context = take 67 (drop (i - 33) text) in
-			if all isPrintable context then
+			if all isPrintableChar context then
 				Just $ pad 5 (show $ lineNumber i 1 $ lines text) ++ " ..." ++ replace [("\n", " "), ("\t", " ")] context ++ "..."
 			else
 				Nothing
