@@ -212,12 +212,7 @@ lookKeywords keywords caseSensitive = do
 	idx <- openHandle idxNm
 	possibilities <- liftM (nub . intersects) (mapM ((`look` idx) . toUpperCase) keywords)
 	texts <- mapM (\nm -> liftM (\str -> (nm, str)) (catch
-			(do
-				printable <- isPrintable nm
-				if printable then
-					extractText nm
-				else
-					return "")
+			(extractText nm)
 			(\(er :: IOError) -> do
 				putStrLn (":::" ++ show er)
 				return "")))
