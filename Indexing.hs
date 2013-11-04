@@ -94,8 +94,9 @@ index name logicalName idx = catch (do
 			else do
 				c1 <- hGetChar fl
 				b <- hIsEOF fl
-				if b then
+				if b then do
 					insertSingle (drop 2 s ++ c1 : " ") logicalName nm idx
+					insertSingle (drop 4 s ++ c1 : "   ") logicalName nm idx
 				else do
 					c2 <- hGetChar fl
 					let s2 = drop 2 s ++ toUpperCase (normalizeText [c1, c2])
