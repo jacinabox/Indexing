@@ -190,7 +190,8 @@ lookKeywords keywords caseSensitive = do
 	idx <- openHandle idxNm
 	keywords <- return $ map normalizeText keywords
 	let longKeywords = filter ((>=5) . length) keywords
-	possibilities <- liftM (nub . intersects) $ mapM ((`look` idx) . toUpperCase) $ if null longKeywords then keywords else longKeywords
+	possibilities <- liftM (nub . intersects) $ mapM ((`look` idx) . toUpperCase)
+		$ if null longKeywords then keywords else longKeywords
 	texts <- mapM (\nm -> liftM (\str -> (nm, str)) (catch
 			(extractText nm)
 			(\(er :: IOError) -> return "")))
