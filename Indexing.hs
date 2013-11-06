@@ -14,6 +14,7 @@ import System.FilePath
 import Control.Exception
 import Data.Maybe
 import System.IO.Error
+import System.IO.Unsafe
 import Prelude hiding (catch)
 import FileCons
 import Replace
@@ -163,9 +164,15 @@ look keyword idx = liftM concat $ mapM
 	(\wnd -> liftM intersects $ mapM (\chunk -> lookIdx chunk (chunk ++ replicate (5 - length chunk) (chr 32767)) idx) (chunks wnd))
 	[keyword, tail keyword]
 
-doLazyIO :: String -> ()
-doLazyIO [] = ()
-doLazyIO ls = last ls `seq` ()
+myGetContents fl = unsafeInterleaveIO $ do
+	b <- hIsEOF fl
+	if b then
+		return []
+	else catch (do
+		liftM2 (:) (hGetChar fl) (myGetContents fl))
+		(\(er :: IOError) -> do
+			putStrLn $ ":::" ++ show er
+			return [])
 
 extractText name = do
 	let paths = split '@' name
@@ -175,9 +182,7 @@ extractText name = do
 		(tail paths)
 	fl <- openFile finalPath ReadMode
 	hSetEncoding fl utf8
-	contents <- hGetContents fl
-	doLazyIO contents `seq` hClose fl
-	return contents
+	myGetContents fl
 
 -- First it acquires a list, /possibilities/, which is a superset of the correct
 -- results. Then it winnows this list down by searching for the keywords
