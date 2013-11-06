@@ -25,13 +25,13 @@ import Driveletters
 
 toUpperCase s = map toUpper s
 
-chunks0 n ls
-	| length ls < n	= []
-	| otherwise	= take n ls : chunks0 n (drop n ls)
+chunks0 ls
+	| length ls < 5	= []
+	| otherwise	= take 5 ls : chunks0 (drop 4 ls)
 
-chunks n ls
-	| length ls < n	= [ls]
-	| otherwise	= chunks0 n ls
+chunks ls
+	| length ls < 5	= [ls]
+	| otherwise	= chunks0 ls
 
 windows n ls = map (\ls2 -> ls2 ++ replicate (n - length ls2) ' ') $ filter ((>2) . length) $ map (take n) $ tails ls
 
@@ -160,7 +160,7 @@ insertSingle k v ins idx = do
 {-# INLINE insertSingle #-}
 
 look keyword idx = liftM concat $ mapM
-	(\wnd -> liftM intersects $ mapM (\chunk -> lookIdx chunk (chunk ++ replicate (5 - length chunk) (chr 32767)) idx) (chunks 5 wnd))
+	(\wnd -> liftM intersects $ mapM (\chunk -> lookIdx chunk (chunk ++ replicate (5 - length chunk) (chr 32767)) idx) (chunks wnd))
 	[keyword, tail keyword]
 
 doLazyIO :: String -> ()
