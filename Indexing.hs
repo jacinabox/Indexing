@@ -184,9 +184,10 @@ extractText name = do
 -- in the texts of the files.
 lookKeywords keywords caseSensitive = do
 	idxNm <- indexFileName
-	keywords <- return $ map normalizeText keywords
 	idx <- openHandle idxNm
-	possibilities <- liftM (nub . intersects) (mapM ((`look` idx) . toUpperCase) keywords)
+	keywords <- return $ map normalizeText keywords
+	let longKeywords = filter ((>=5) . length) keywords
+	possibilities <- liftM (nub . intersects) $ mapM ((`look` idx) . toUpperCase) $ if null longKeywords then keywords else longKeywords
 	texts <- mapM (\nm -> liftM (\str -> (nm, str)) (catch
 			(extractText nm)
 			(\(er :: IOError) -> do
