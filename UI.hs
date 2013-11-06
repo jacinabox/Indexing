@@ -121,13 +121,13 @@ loWord n = n .&. 32767
 hiWord :: LPARAM -> LPARAM
 hiWord n = shiftR n 16
 
-screenCoord i nKeywords scroll = ((nKeywords+1)*textHeight+3*pad)*i+textBoxHeight-scroll
+screenCoord i nKeywords scroll = ((nKeywords+1)*textHeight+3*pad+1)*i+textBoxHeight-scroll
 
 hitTest :: LPARAM -> IORef (t, Int32) -> IORef Int32 -> IO Int32
 hitTest y resultsRef scrollRef = do
 	(_, nKeywords) <- readIORef resultsRef
 	scroll <- readIORef scrollRef
-	return $ (y - textBoxHeight + scroll) `div` ((nKeywords+1)*textHeight+3*pad)
+	return $ (y - textBoxHeight + scroll) `div` ((nKeywords+1)*textHeight+3*pad+1)
 
 addString txt s = withTString s $ \p -> sendMessage txt cB_ADDSTRING 0 (unsafeCoerce p)
 
@@ -283,14 +283,14 @@ wndProc resultsRef sortRef scrollRef historyRef wnd msg wParam lParam
 		mapM_
 			(\(result, contexts) -> do
 				y <- readIORef yRef
-				let newY = y+textHeight*(nKeywords+1)+3*pad
+				let newY = y+textHeight*(nKeywords+1)+3*pad+1
 
 				fillRect dc (0, y + 1, 32767, newY) white
 
-				textOut dc pad (y + pad) result
+				textOut dc pad (y + pad + 1) result
 				
 				selectFont dc font
-				modifyIORef' yRef (+(textHeight+2*pad))
+				modifyIORef' yRef (+(textHeight+2*pad+1))
 				mapM_ (\s -> do
 					y <- readIORef yRef
 					textOut dc pad y s
