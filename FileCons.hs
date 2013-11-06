@@ -1,6 +1,6 @@
 {-# LANGUAGE CPP, ScopedTypeVariables #-}
 
-module FileCons (Cons, openHandle, closeHandle, newCons, newInt, newStr, isPair, first, second, setFirst, setSecond, int, str, getPtr, list, toList, nth, shw, cmpr, cmpr2, dlookup, lookupSingle, dinsert, deleteFindMin, deleteFindMax, delete, depth, size) where
+module FileCons (Cons, openHandle, closeHandle, newCons, newInt, newStr, isPair, first, second, setFirst, setSecond, int, str, getPtr, list, toList, nth, shw, followPtr, cmpr, cmpr2, dlookup, lookupSingle, dinsert, deleteFindMin, deleteFindMax, delete, traverse, depth, size) where
 
 import System.IO.Unsafe
 import Control.Monad
@@ -193,11 +193,26 @@ shw cons = if isInt cons then
 		s <- second cons >>= shw
 		return $ "Cons (" ++ f ++ ") (" ++ s ++ ")"
 
+-- Pointers between files
+
+createPtr c (Cons path _ i) = newCons (newStr c path) (newInt c i)
+
+followPtr cons = do
+	f <- first cons
+	s <- second cons
+	path <- str f
+	Cons _ ref _ <- openHandle path
+#ifdef DEBUG
+	(_, used, _) <- readIORef ref
+	when (int s >= used) $ error "followPtr: bad ptr"
+#endif
+	return $! Cons path ref $ int s
+
+-- Dictionary operations, adapted from Data.Map
+
 cmpr s c = liftM (compare s) (str c)
 
 cmpr2 c c2 = liftM2 compare (str c) (str c2)
-
--- Dictionary operations, adapted from Data.Map
 
 dlookup cmp k k2 t
 	| isPair t	= do
@@ -296,6 +311,13 @@ delete cmpr k t = do
 				setFirst val x
 			else
 				setFirst t (newInt t 0)
+
+traverse f t = when (isPair t) $ do
+	nth 2 t >>= traverse f
+	k <- nth 0 t
+	v <- nth 1 t
+	f k v
+	nth 3 t >>= traverse f
 
 depth idx = if isPair idx then
 	liftM2 (\x y -> 1 + max x y) (nth 2 idx >>= depth) (nth 3 idx >>= depth)

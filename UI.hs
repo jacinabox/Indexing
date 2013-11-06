@@ -186,12 +186,16 @@ wndProc resultsRef sortRef scrollRef historyRef wnd msg wParam lParam
 			createProcess (proc "explorer" [takeDirectory $ head $ split '@' $ fst $ res !! fromIntegral i])
 			return ()
 		return 0
-	| msg == wM_LBUTTONUP	= do
+	| msg == wM_LBUTTONDBLCLK	= do
 		(res, _) <- readIORef resultsRef
 		i <- hitTest (hiWord lParam) resultsRef scrollRef
 		when (i < fromIntegral (length res)) $ do
 			createProcess (shell $ quote $ head $ split '@' $ fst $ res !! fromIntegral i)
 			return ()
+		return 0
+	| msg == wM_LBUTTONUP || msg == wM_RBUTTONUP	= do
+		txt <- getDlgItem wnd txtId
+		setFocus txt
 		return 0
 	| msg == wM_MOUSEMOVE	= do
 		(res, nKeywords) <- readIORef resultsRef
