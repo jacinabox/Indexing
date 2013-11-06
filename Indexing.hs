@@ -193,9 +193,7 @@ lookKeywords keywords caseSensitive = do
 	possibilities <- liftM (nub . intersects) $ mapM ((`look` idx) . toUpperCase) $ if null longKeywords then keywords else longKeywords
 	texts <- mapM (\nm -> liftM (\str -> (nm, str)) (catch
 			(extractText nm)
-			(\(er :: IOError) -> do
-				putStrLn (":::" ++ show er)
-				return "")))
+			(\(er :: IOError) -> return "")))
 		possibilities
 	closeHandle idx
 	let caseFunction = if caseSensitive then id else toUpperCase
