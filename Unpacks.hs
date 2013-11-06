@@ -101,16 +101,19 @@ convertRtf0 count (x:xs) = if count > 0 then convertRtf0 count xs else x : conve
 convertRtf0 _ [] = []
 
 -- These escape sequences should be removed entirely
-escapeTableRemove = ["\\par", "\\pard", "\\hyphpar", "\\intbl", "\\keep", "\\nowidctlpar", "\\widctlpar", "\\keepn", "\\noline", "\\pagebb", "\\sbys", "\\ql", "\\qr", "\\qj", "\\qc", "\\rtlpar", "\\ltrpar", "\\tqr", "\\tqc", "\\tqdec", "\\tldot", "\\tlhyph", "\\tlul", "\\tlth", "\\tleq", "\\plain", "\\b", "\\caps", "\\deleted", "\\dnN", "\\embo", "\\impr", "\\sub", "\\nosupersub", "\\i", "\\outl", "\\csaps", "\\shad", "\\strike", "\\strikedl", "\\ul", "\\uld", "\\uldash", "\\uldashd", "\\uldashdd", "\\uldb", "\\ulnone", "\\ulth", "\\ulw", "\\ulwave", "\\super", "\\v", "\\rtlch", "\\ltrch"]
+escapeTableRemove = ["\\par", "\\pard", "\\hyphpar", "\\intbl", "\\keep", "\\nowidctlpar", "\\widctlpar", "\\keepn", "\\noline", "\\pagebb", "\\sbys", "\\ql", "\\qr", "\\qj", "\\qc", "\\rtlpar", "\\ltrpar", "\\tqr", "\\tqc", "\\tqdec", "\\tldot", "\\tlhyph", "\\tlul", "\\tlth", "\\tleq", "\\plain", "\\b0", "\\b", "\\caps", "\\deleted", "\\embo", "\\impr", "\\sub", "\\nosupersub", "\\i0", "\\i", "\\outl", "\\csaps", "\\shad", "\\strike", "\\strikedl", "\\uldashdd", "\\uldashd", "\\uldash", "\\uldb", "\\uld", "\\ulnone", "\\ulth", "\\ulwave", "\\ulw", "\\ul", "\\super", "\\v", "\\rtlch", "\\ltrch"]
 
-escapeTableNumbersFollowing = ["\\expnd", "\\expndtw", "\\kerning", "\\f", "\\fs", "\\cf", "\\cb", "\\cs", "\\cchs", "\\lang"]
+escapeTableNumbersFollowing = ["\\expndtw", "\\expnd", "\\kerning", "\\fs", "\\f", "\\cf", "\\cb", "\\cs", "\\cchs", "\\lang", "\\dn"]
+
+eatSpace (' ':xs) = xs
+eatSpace xs = xs
 
 eraseNumbered s@(x:xs) = case foldr mplus mzero (map (\y -> stripPrefix y s) escapeTableNumbersFollowing) of
-	Just ys -> eraseNumbered $ snd $ span isDigit ys
+	Just ys -> eraseNumbered $ eatSpace $ snd $ span isDigit ys
 	Nothing -> x : eraseNumbered xs
 eraseNumbered [] = []
 
-convertRtf = replace (("\\\\", "\\") : map (\x -> (x, "")) escapeTableRemove) . eraseNumbered . convertRtf0 0 . init . tail
+convertRtf = replace (("\\\\", "\\") : map (\x -> (x ++ " ", "")) escapeTableRemove ++ map (\x -> (x, "")) escapeTableRemove) . eraseNumbered . convertRtf0 0 . init . tail
 
 getUnpackDir n = do
 	tmp <- getTemporaryDirectory
