@@ -121,7 +121,9 @@ loWord n = n .&. 32767
 hiWord :: LPARAM -> LPARAM
 hiWord n = shiftR n 16
 
-screenCoord i nKeywords scroll = ((nKeywords+1)*textHeight+3*pad+1)*i+textBoxHeight-scroll
+logicalCoord i nKeywords = ((nKeywords+1)*textHeight+3*pad+1)*i
+
+screenCoord i nKeywords scroll = logicalCoord i nKeywords + textBoxHeight - scroll
 
 hitTest :: LPARAM -> IORef (t, Int32) -> IORef Int32 -> IO Int32
 hitTest y resultsRef scrollRef = do
@@ -239,7 +241,7 @@ wndProc resultsRef sortRef scrollRef historyRef wnd msg wParam lParam
 		let offset = fromJust $ lookup wParam [(vK_UP, -100), (vK_DOWN, 100), (vK_PRIOR, -y), (vK_NEXT, y)]
 		(res, nKeywords) <- readIORef resultsRef
 		scroll <- readIORef scrollRef
-		let newScroll = (((nKeywords+1)*textHeight+3*pad)*(fromIntegral (length res)-1)) `min` (0 `max` (scroll + offset))
+		let newScroll = logicalCoord (fromIntegral (length res)-1) nKeywords `min` (0 `max` (scroll + offset))
 		writeIORef scrollRef newScroll
 		when (scroll /= newScroll) (invalidateRect (Just wnd) Nothing True)
 		return 1
