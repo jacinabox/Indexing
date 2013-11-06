@@ -170,9 +170,7 @@ myGetContents fl = unsafeInterleaveIO $ do
 		return []
 	else catch (do
 		liftM2 (:) (hGetChar fl) (myGetContents fl))
-		(\(er :: IOError) -> do
-			putStrLn $ ":::" ++ show er
-			return [])
+		(\(_ :: IOError) -> return [])
 
 extractText name = do
 	let paths = split '@' name
