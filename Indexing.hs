@@ -28,7 +28,7 @@ toUpperCase s = map toUpper s
 
 chunks0 ls
 	| length ls < 5	= []
-	| otherwise	= take 5 ls : chunks0 (drop 4 ls)
+	| otherwise	= take 5 ls : chunks0 (drop 2 ls)
 
 chunks ls
 	| length ls < 5	= [ls]
@@ -194,7 +194,7 @@ lookKeywords keywords caseSensitive = do
 		$ if null longKeywords then keywords else longKeywords
 	texts <- mapM (\nm -> liftM (\str -> (nm, str)) (catch
 			(extractText nm)
-			(\(er :: IOError) -> return "")))
+			(\(er :: IOError) -> return [])))
 		possibilities
 	closeHandle idx
 	let caseFunction = if caseSensitive then id else toUpperCase
