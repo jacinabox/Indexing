@@ -122,7 +122,7 @@ convertFile f name = do
 	path <- getUnpackDir 0
 	txt <- readFile name
 	writeFile (path ++ "converted.dat") (f txt)
-	return path 
+	return path
 
 unpack cmd switches name = do
 	path <- getUnpackDir 0
