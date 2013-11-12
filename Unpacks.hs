@@ -103,7 +103,7 @@ convertRtf0 _ [] = []
 -- These escape sequences should be removed entirely
 escapeTableRemove = ["\\par", "\\pard", "\\hyphpar", "\\intbl", "\\keep", "\\nowidctlpar", "\\widctlpar", "\\keepn", "\\noline", "\\pagebb", "\\sbys", "\\ql", "\\qr", "\\qj", "\\qc", "\\rtlpar", "\\ltrpar", "\\tqr", "\\tqc", "\\tqdec", "\\tldot", "\\tlhyph", "\\tlul", "\\tlth", "\\tleq", "\\plain", "\\b0", "\\b", "\\caps", "\\deleted", "\\embo", "\\impr", "\\sub", "\\nosupersub", "\\i0", "\\i", "\\outl", "\\csaps", "\\shad", "\\strike", "\\strikedl", "\\uldashdd", "\\uldashd", "\\uldash", "\\uldb", "\\uld", "\\ulnone", "\\ulth", "\\ulwave", "\\ulw", "\\ul", "\\super", "\\v", "\\rtlch", "\\ltrch", "\\sect", "\\sectd", "\\endnhere", "\\sectunlocked", "\\sbknone", "\\sbkcol", "\\sbkpage", "\\sbkeven", "\\sbkodd", "\\linebetcol", "\\linerestart", "\\lineppage", "\\linecont"]
 
-escapeTableNumbersFollowing = ["\\expndtw", "\\expnd", "\\kerning", "\\fi", "\\li", "\\ri", "\\fs", "\\f", "\\cf", "\\cb", "\\cs", "\\cchs", "\\lang", "\\dn", "\\outlinelevel", "\\sb", "\\sa", "\\sl", "\\smult", "\\tx", "\\tb", "\\binfsxn", "\\binsxn", "\\ds", "\\pnseclvl", "\\colsx", "\\colno", "\\colsr", "\\cols", "\\colw", "\\linemod", "\\linex", "\\linestarts"]
+escapeTableNumbersFollowing = ["\\expndtw", "\\expnd", "\\kerning", "\\fi", "\\li", "\\ri", "\\fs", "\\f", "\\cf", "\\cb", "\\cs", "\\cchs", "\\lang", "\\dn", "\\outlinelevel", "\\sb", "\\sa", "\\sl", "\\slmult", "\\tx", "\\tb", "\\binfsxn", "\\binsxn", "\\ds", "\\pnseclvl", "\\colsx", "\\colno", "\\colsr", "\\cols", "\\colw", "\\linemod", "\\linex", "\\linestarts"]
 
 eatSpace (' ':xs) = xs
 eatSpace xs = xs
