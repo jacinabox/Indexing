@@ -100,20 +100,14 @@ convertRtf0 count ('}':xs) = convertRtf0 (count - 1) xs
 convertRtf0 count (x:xs) = if count > 0 then convertRtf0 count xs else x : convertRtf0 count xs
 convertRtf0 _ [] = []
 
--- These escape sequences should be removed entirely
-escapeTableRemove = sortBy (flip compare) $ ["\\par", "\\pard", "\\hyphpar", "\\intbl", "\\keep", "\\nowidctlpar", "\\widctlpar", "\\keepn", "\\noline", "\\pagebb", "\\sbys", "\\ql", "\\qr", "\\qj", "\\qc", "\\rtlpar", "\\ltrpar", "\\tqr", "\\tqc", "\\tqdec", "\\tldot", "\\tlhyph", "\\tlul", "\\tlth", "\\tleq", "\\plain", "\\b0", "\\b", "\\caps", "\\deleted", "\\embo", "\\impr", "\\sub", "\\nosupersub", "\\i0", "\\i", "\\outl", "\\csaps", "\\shad", "\\strike", "\\strikedl", "\\uldashdd", "\\uldashd", "\\uldash", "\\uldb", "\\uld", "\\ulnone", "\\ulth", "\\ulwave", "\\ulw", "\\ul", "\\super", "\\v", "\\rtlch", "\\ltrch", "\\ansi", "\\mac", "\\pc", "\\pca", "\\upr", "\\ud", "\\hyphcaps", "\\hyphauto", "\\fracwidth", "\\defformat", "\\psover", "\\doctemp", "\\deflangfe", "\\windowcaption", "\\fromtext", "\\facingp", "\\margmirror", "\\landscape", "\\widowctrl", "\\rtf", "\\deff", "\\nouicompat"] ++ escapeTableNumbersFollowing
-
-escapeTableNumbersFollowing = ["\\expndtw", "\\expnd", "\\kerning", "\\fi", "\\li", "\\ri", "\\fs", "\\f", "\\cf", "\\cb", "\\cs", "\\cchs", "\\lang", "\\dn", "\\outlinelevel", "\\sb", "\\sa", "\\sl", "\\slmult", "\\tx", "\\tb", "\\ansicpg", "\\uc", "\\deftab", "\\hyphhotz", "\\hyphconsec", "\\linestart", "\\deflang", "\\doctype", "\\viewkind", "\\viewscale", "\\viewzk", "\\paperw", "\\paperh", "\\psz", "\\margl", "\\margr", "\\margt", "\\margb", "\\gutter", "\\pgnstart", "\\u"]
-
-eatSpace (' ':xs) = xs
-eatSpace xs = xs
-
-eraseTags s@(x:xs) = case foldl mplus mzero (map (\y -> stripPrefix y s) escapeTableRemove) of
-	Just ys -> eraseTags $ eatSpace $ snd $ span isDigit ys
-	Nothing -> x : eraseTags xs
+eraseTags ('\\':'\\':xs) = '\\' : eraseTags xs
+eraseTags ('\\':xs) = case snd $ break (`elem` "\\\n ") xs of
+	' ' : ys -> eraseTags ys
+	ys -> eraseTags ys
+eraseTags (x:xs) = x : eraseTags xs
 eraseTags [] = []
 
-convertRtf = eraseTags . convertRtf0 0 . init . tail
+convertRtf = eraseTags . convertRtf0 0 . tail . init
 
 getUnpackDir n = do
 	tmp <- getTemporaryDirectory
