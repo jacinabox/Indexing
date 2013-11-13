@@ -14,6 +14,10 @@ An overview of the components of this project:
 * FileCons.hs - the low-level file access code used by Indexing.hs. Also stands on its own as a library.
 * Normalize.hs - a function that converts accents to unaccented characters, to make searching in European languages easier.
 
+If you do not have the Win32 package, install it by doing
+
+cabal install win32
+
 To build the application, use
 
 ghc UI.hs -o Index -O2 -DWIN32
