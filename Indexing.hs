@@ -197,7 +197,7 @@ lookKeywords keywords caseSensitive = do
 			(\(er :: IOError) -> return [])))
 		possibilities
 	closeHandle idx
-	return $ catMaybes $ map (\(nm, text) -> liftM ((,) nm) (contexts keywords text caseSensitive)) texts
+	return $ catMaybes $ map (\(nm, text) -> contexts keywords nm text caseSensitive) texts
 
 lineNumber idx num (line:lines) = if idx < length line then
 		num
@@ -206,10 +206,14 @@ lineNumber idx num (line:lines) = if idx < length line then
 
 pad n s = replicate (n - length s) ' ' ++ s
 
-contexts keywords text caseSensitive = sequence $ map (\k -> case findIndex (\suffix -> isPrefixOf (caseFunction (normalizeText k)) suffix) (tails (caseFunction (normalizeText text))) of
+-- This function produces the contexts for a search. It also figures out
+-- which paths are valid results at all. Valid results produce results
+-- in the Just constructor.
+contexts keywords name text caseSensitive = liftM (\ctxts -> (name, filter (not . null) ctxts)) $ sequence $ map (\k -> let k2 = caseFunction (normalizeText k) in
+	case findIndex (\suffix -> isPrefixOf k2 suffix) (tails (caseFunction (normalizeText text))) of
 		Just i -> let context = take 67 (drop (i - 33) text) in
 			Just $ pad 5 (show $ lineNumber i 1 $ lines text) ++ " ..." ++ replace [("\n", " "), ("\t", " ")] context ++ "..."
-		Nothing -> Nothing)
+		Nothing -> if isInfixOf k2 (caseFunction (normalizeText name)) then Just "" else Nothing)
 	keywords where
 	caseFunction = if caseSensitive then id else toUpperCase
 
