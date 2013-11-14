@@ -223,7 +223,7 @@ wndProc resultsRef sortRef scrollRef historyRef wnd msg wParam lParam
 				insertString txt s
 				modifyIORef' historyRef (s:)
 				res <- lookKeywords keywords False
-				writeIORef resultsRef (map (\(nm, text) -> (nm, contexts keywords text False)) res, fromIntegral $ length keywords)
+				writeIORef resultsRef (res, fromIntegral $ length keywords)
 		sortResults sortRef resultsRef
 		writeIORef scrollRef 0
 		invalidateRect (Just wnd) Nothing True
@@ -350,9 +350,9 @@ main = do
 	else do
 		let caseSensitive = "-c" `elem` args
 		results <- lookKeywords keywords caseSensitive
-		mapM_ (\(nm, text) -> do
+		mapM_ (\(nm, contexts) -> do
 				putStrLn ""
 				putStrLn ("  " ++ nm)
-				mapM_ putStrLn (contexts keywords text caseSensitive))
+				mapM_ putStrLn contexts)
 			results
 		when (null results) (putStrLn "Index: no results found")

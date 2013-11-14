@@ -1,6 +1,6 @@
 {-# LANGUAGE ScopedTypeVariables, CPP #-}
 
-module Indexing (indexFileName, indexWrapper, fullIndex, lookKeywords, contexts, parseKeywords) where
+module Indexing (indexFileName, indexWrapper, fullIndex, lookKeywords, parseKeywords) where
 
 import Data.List hiding (union, insert)
 import Control.Monad
@@ -192,16 +192,12 @@ lookKeywords keywords caseSensitive = do
 	let longKeywords = filter ((>=5) . length) keywords
 	possibilities <- liftM (nub . intersects) $ mapM ((`look` idx) . toUpperCase)
 		$ if null longKeywords then keywords else longKeywords
-	texts <- mapM (\nm -> liftM (\str -> (nm, str)) (catch
+	texts <- mapM (\nm -> liftM ((,) nm) (catch
 			(extractText nm)
 			(\(er :: IOError) -> return [])))
 		possibilities
 	closeHandle idx
-	let caseFunction = if caseSensitive then id else toUpperCase
-	let keywords2 = map caseFunction keywords
-	return $ filter
-		(\(nm, str) -> all (\k -> any (isInfixOf k . caseFunction . normalizeText) [takeFileName nm, str]) keywords2)
-		texts
+	return $ catMaybes $ map (\(nm, text) -> liftM ((,) nm) (contexts keywords text caseSensitive)) texts
 
 lineNumber idx num (line:lines) = if idx < length line then
 		num
@@ -210,7 +206,7 @@ lineNumber idx num (line:lines) = if idx < length line then
 
 pad n s = replicate (n - length s) ' ' ++ s
 
-contexts keywords text caseSensitive = catMaybes $ map (\k -> case findIndex (\suffix -> isPrefixOf (caseFunction k) suffix) (tails (caseFunction text)) of
+contexts keywords text caseSensitive = sequence $ map (\k -> case findIndex (\suffix -> isPrefixOf (caseFunction (normalizeText k)) suffix) (tails (caseFunction (normalizeText text))) of
 		Just i -> let context = take 67 (drop (i - 33) text) in
 			Just $ pad 5 (show $ lineNumber i 1 $ lines text) ++ " ..." ++ replace [("\n", " "), ("\t", " ")] context ++ "..."
 		Nothing -> Nothing)
