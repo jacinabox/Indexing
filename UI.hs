@@ -131,8 +131,6 @@ hitTest y resultsRef scrollRef = do
 	scroll <- readIORef scrollRef
 	return $ (y - textBoxHeight + scroll) `div` ((nKeywords+1)*textHeight+3*pad+1)
 
-addString txt s = withTString s $ \p -> sendMessage txt cB_ADDSTRING 0 (unsafeCoerce p)
-
 insertString txt s = withTString s $ \p -> sendMessage txt cB_INSERTSTRING 0 (unsafeCoerce p)
 
 openHistory mode = do
@@ -144,14 +142,13 @@ openHistory mode = do
 readHistory txt historyRef = do
 	fl <- openHistory ReadMode
 	text <- hGetContents fl
-	mapM_ (addString txt) (lines text)
+	mapM_ (insertString txt) (lines text)
 	hClose fl
-	writeIORef historyRef (lines text)
 
 writeHistory historyRef = do
-	fl <- openHistory WriteMode
+	fl <- openHistory AppendMode
 	history <- readIORef historyRef
-	mapM_ (hPutStrLn fl) (take 20 history)
+	mapM_ (hPutStrLn fl) (reverse history)
 	hClose fl
 
 txtProc parent proc wnd msg wParam lParam
