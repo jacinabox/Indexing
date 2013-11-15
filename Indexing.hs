@@ -43,6 +43,8 @@ indexFileName = do
 	createDirectoryIfMissing False dir
 	return (dir ++ pathDelimiter : "Index.dat")
 
+isPrintable c = ord c >= 32 || c == '\t' || c == '\n' || c == '\r'
+
 -- We maintain a distinction between "names" and "logical names," in order
 -- to handle files that have been unpacked from archives. The logical names
 -- are the names the user will see, and are a concatenation of paths
@@ -58,33 +60,51 @@ index name logicalName idx = catch (do
 		(\add -> insertSingle add logicalName nm idx)
 		(indexAddition (takeFileName name))
 
-	-- Associates each window with the given file.
-	fl <- openFile name ReadMode
-	hSetEncoding fl utf8
-	c1 <- hGetChar fl
-	c2 <- hGetChar fl
-	c3 <- hGetChar fl
-	c4 <- hGetChar fl
-	c5 <- hGetChar fl
-	let s = toUpperCase (normalizeText [c1, c2, c3, c4, c5])
-	insertSingle s logicalName nm idx
-	let loop s = do
-		b <- hIsEOF fl
-		if b then
-			insertSingle (drop 2 s ++ "  ") logicalName nm idx
-		else do
-			c1 <- hGetChar fl
+	-- Check if this file is printable.
+	fl <- openBinaryFile name ReadMode
+	let
+		loop 0 = return True
+		loop n = do
 			b <- hIsEOF fl
-			if b then do
-				insertSingle (drop 2 s ++ normalizeText [c1] ++ " ") logicalName nm idx
-				insertSingle (drop 4 s ++ normalizeText [c1] ++ "   ") logicalName nm idx
+			if b then
+				return True
 			else do
-				c2 <- hGetChar fl
-				let s2 = drop 2 s ++ toUpperCase (normalizeText [c1, c2])
-				insertSingle s2 logicalName nm idx
-				loop s2
-	loop s
-	hClose fl)
+				c <- hGetChar fl
+				if isPrintable c then
+					loop (n - 1)
+				else
+					return False
+	printable <- loop 500
+	hClose fl
+
+	when printable $ do
+		-- Associates each window with the given file.
+		fl <- openFile name ReadMode
+		hSetEncoding fl utf8
+		c1 <- hGetChar fl
+		c2 <- hGetChar fl
+		c3 <- hGetChar fl
+		c4 <- hGetChar fl
+		c5 <- hGetChar fl
+		let s = toUpperCase (normalizeText [c1, c2, c3, c4, c5])
+		insertSingle s logicalName nm idx
+		let loop s = do
+			b <- hIsEOF fl
+			if b then
+				insertSingle (drop 2 s ++ "  ") logicalName nm idx
+			else do
+				c1 <- hGetChar fl
+				b <- hIsEOF fl
+				if b then do
+					insertSingle (drop 2 s ++ normalizeText [c1] ++ " ") logicalName nm idx
+					insertSingle (drop 4 s ++ normalizeText [c1] ++ "   ") logicalName nm idx
+				else do
+					c2 <- hGetChar fl
+					let s2 = drop 2 s ++ toUpperCase (normalizeText [c1, c2])
+					insertSingle s2 logicalName nm idx
+					loop s2
+		loop s
+		hClose fl)
 	(\(er :: IOError) -> putStrLn (":::" ++ show er))
 
 details1 name logicalName idx code = catch
@@ -209,7 +229,7 @@ pad n s = replicate (n - length s) ' ' ++ s
 -- This function produces the contexts for a search. It also figures out
 -- which paths are valid results at all. Valid results produce results
 -- in the Just constructor.
-contexts keywords name text caseSensitive = liftM (\ctxts -> (name, filter (not . null) ctxts)) $ sequence $ map (\k -> let k2 = caseFunction (normalizeText k) in
+contexts keywords name text caseSensitive = liftM ((,) name) $ sequence $ map (\k -> let k2 = caseFunction (normalizeText k) in
 	case findIndex (\suffix -> isPrefixOf k2 suffix) (tails (caseFunction (normalizeText text))) of
 		Just i -> let context = take 67 (drop (i - 33) text) in
 			Just $ pad 5 (show $ lineNumber i 1 $ lines text) ++ " ..." ++ replace [("\n", " "), ("\t", " ")] context ++ "..."
