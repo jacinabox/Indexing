@@ -13,6 +13,7 @@ An overview of the components of this project:
 * Driveletters.hs - a module that interfaces with Win32, to determine the letters of the fixed drives on the system, for indexing.
 * FileCons.hs - the low-level file access code used by Indexing.hs. Also stands on its own as a library.
 * Normalize.hs - a function that converts accents to unaccented characters, to make searching in European languages easier.
+* Subclass.hs - a function for subclassing a window in Win32.
 
 If you do not have the Win32 package, install it by doing
 

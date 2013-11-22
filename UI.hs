@@ -10,8 +10,6 @@ import Data.Int
 import Data.List
 import Data.Maybe
 import Data.Function
-import Foreign.Ptr
-import Foreign.ForeignPtr
 import Control.Monad
 import System.Exit
 import Unsafe.Coerce
@@ -21,11 +19,11 @@ import System.FilePath
 import System.Process
 import Control.Exception
 import System.IO
+import Foreign.ForeignPtr
 import Indexing
 import Unpacks
 import Split
-
-foreign import stdcall "windows.h CallWindowProcW" callWindowProc :: FunPtr WindowClosure -> HWND -> UINT -> WPARAM -> LPARAM -> IO LRESULT
+import Subclass
 
 foreign import stdcall "windows.h GetWindowTextW" c_GetWindowText :: HWND -> LPTSTR -> Int32 -> IO LRESULT
 
@@ -61,8 +59,6 @@ btnWidth = 175
 
 gWLP_ID = -12
 
-gWLP_WNDPROC = -4
-
 wM_MOUSEWHEEL = 522
 
 dLGC_WANTARROWS :: Int32
@@ -82,26 +78,6 @@ txtId = 100
 
 btnId :: Int
 btnId = 101
-
--- This function subclasses a window and takes care of freeing
--- the function pointer when the window closes. The parameter function
--- is passed a function that invokes the default behaviour of the
--- window.
-subclassProc :: HWND -> (WindowClosure -> WindowClosure) -> IO ()
-subclassProc wnd proc = do
-	procVar <- newIORef Nothing
-	let closure wnd msg wParam lParam = do
-		may <- readIORef procVar
-		case may of
-			Just (funPtr, oldProc) -> do
-				when (msg == wM_NCDESTROY) $ do
-					c_SetWindowLongPtr wnd gWLP_WNDPROC oldProc
-					freeHaskellFunPtr funPtr
-				callWindowProc (unsafeCoerce oldProc) wnd msg wParam lParam
-			Nothing -> return 0
-	funPtr <- mkWindowClosure (proc closure)
-	oldProc <- c_SetWindowLongPtr wnd gWLP_WNDPROC (unsafeCoerce funPtr)
-	writeIORef procVar (Just (funPtr, oldProc))
 
 drawMessage wnd = do
 	dc <- getDC (Just wnd)
