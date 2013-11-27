@@ -24,8 +24,8 @@ subclassProc wnd proc = do
 				when (msg == wM_NCDESTROY) $ do
 					c_SetWindowLongPtr wnd gWLP_WNDPROC oldProc
 					freeHaskellFunPtr funPtr
-				callWindowProc (unsafeCoerce oldProc) wnd msg wParam lParam
-			Nothing -> return 0
-	funPtr <- mkWindowClosure (proc closure)
+				proc (callWindowProc (unsafeCoerce oldProc)) wnd msg wParam lParam
+			Nothing -> proc (\_ _ _ _ -> return 0) wnd msg wParam lParam
+	funPtr <- mkWindowClosure closure
 	oldProc <- c_SetWindowLongPtr wnd gWLP_WNDPROC (unsafeCoerce funPtr)
 	writeIORef procVar (Just (funPtr, oldProc))
