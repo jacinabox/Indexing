@@ -276,7 +276,7 @@ wndProc resultsRef settingsRef scrollRef historyRef wnd msg wParam lParam
 		txt <- getDlgItem wnd txtId
 		btn <- getDlgItem wnd btnId
 		(_, _, x, y) <- getClientRect wnd
-		moveWindow txt 0 0 (fromIntegral x) textBoxHeight True
+		moveWindow txt 0 0 (fromIntegral x) 300 True
 		showWindow btn sW_HIDE
 		return 0)
 		(\(_ :: SomeException) -> return 0)
