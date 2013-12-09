@@ -46,7 +46,7 @@ getWindowText wnd = do
 data Sort = ByPath | ByName | ByType
 
 textBoxHeight :: (Integral i) => i
-textBoxHeight = 19
+textBoxHeight = 21
 
 textHeight :: (Integral i) => i
 textHeight = 14
@@ -96,7 +96,7 @@ drawMessage wnd = do
 	font <- makeFont fW_NORMAL
 	oldFont <- selectFont dc font
 	white <- getStockBrush wHITE_BRUSH
-	fillRect dc (0, 2 * textBoxHeight + 1, 32767, 32767) white
+	fillRect dc (0, 2 * textBoxHeight, 32767, 32767) white
 	textOut dc pad (2 * textBoxHeight + pad) "Please wait"
 	selectFont dc oldFont
 	deleteFont font
@@ -254,8 +254,7 @@ wndProc resultsRef settingsRef scrollRef historyRef wnd msg wParam lParam
 		sort1 <- createWindow (mkClassName "Button") "Sort by path" (wS_VISIBLE .|. wS_CHILDWINDOW .|. bS_AUTORADIOBUTTON) (Just 0) (Just textBoxHeight) (Just 100) (Just textBoxHeight) (Just wnd) Nothing inst (defWindowProc . Just)
 		sort2 <- createWindow (mkClassName "Button") "Sort by name" (wS_VISIBLE .|. wS_CHILDWINDOW .|. bS_AUTORADIOBUTTON) (Just 100) (Just textBoxHeight) (Just 100) (Just textBoxHeight) (Just wnd) Nothing inst (defWindowProc . Just)
 		sort3 <- createWindow (mkClassName "Button") "Sort by type" (wS_VISIBLE .|. wS_CHILDWINDOW .|. bS_AUTORADIOBUTTON) (Just 200) (Just textBoxHeight) (Just 100) (Just textBoxHeight) (Just wnd) Nothing inst (defWindowProc . Just)
-		caseBtn <- createWindow (mkClassName "Button") "Case sensitive" (wS_VISIBLE .|. wS_CHILDWINDOW .|. bS_AUTOCHECKBOX) (Just 300) (Just textBoxHeight) (Just 100) (Just textBoxHeight) (Just wnd) Nothing inst (defWindowProc . Just)
-		createWindow (mkClassName "Static") "" (wS_VISIBLE .|. wS_CHILDWINDOW) (Just 400) (Just textBoxHeight) (Just 32767) (Just textBoxHeight) (Just wnd) Nothing inst (defWindowProc . Just)
+		caseBtn <- createWindow (mkClassName "Button") "Case sensitive" (wS_VISIBLE .|. wS_CHILDWINDOW .|. bS_AUTOCHECKBOX) (Just 300) (Just textBoxHeight) (Just 32767) (Just textBoxHeight) (Just wnd) Nothing inst (defWindowProc . Just)
 		c_SetWindowLongPtr txt gWLP_ID (unsafeCoerce txtId)
 		c_SetWindowLongPtr btn gWLP_ID (unsafeCoerce btnId)
 		c_SetWindowLongPtr sort1 gWLP_ID (unsafeCoerce sort1Id)
@@ -298,6 +297,11 @@ wndProc resultsRef settingsRef scrollRef historyRef wnd msg wParam lParam
 				y <- readIORef yRef
 				let newY = y+textHeight*(nKeywords+1)+3*pad+1
 
+				oldpen <- selectPen dc pen
+				moveToEx dc 0 y
+				lineTo dc 32767 y
+				selectPen dc oldpen
+
 				fillRect dc (0, y + 1, 32767, newY) white
 
 				textOut dc pad (y + pad + 1) result
@@ -308,10 +312,6 @@ wndProc resultsRef settingsRef scrollRef historyRef wnd msg wParam lParam
 					y <- readIORef yRef
 					textOut dc pad y s
 					writeIORef yRef (y + textHeight)) contexts
-				oldpen <- selectPen dc pen
-				moveToEx dc 0 newY
-				lineTo dc 32767 newY
-				selectPen dc oldpen
 				selectFont dc fontBold
 
 				writeIORef yRef newY)
@@ -319,6 +319,10 @@ wndProc resultsRef settingsRef scrollRef historyRef wnd msg wParam lParam
 		deletePen pen
 
 		y <- readIORef yRef
+		oldpen <- selectPen dc pen
+		moveToEx dc 0 y
+		lineTo dc 32767 y
+		selectPen dc oldpen
 		fillRect dc (0, y + 1, 32767, 32767) white
 
 		selectFont dc oldFont
