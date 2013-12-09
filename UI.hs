@@ -45,10 +45,10 @@ getWindowText wnd = do
 
 data Sort = ByPath | ByName | ByType
 
-textBoxHeight :: Int32
+textBoxHeight :: (Integral i) => i
 textBoxHeight = 19
 
-textHeight :: Int32
+textHeight :: (Integral i) => i
 textHeight = 14
 
 pad :: Int32
@@ -79,41 +79,55 @@ txtId = 100
 btnId :: Int
 btnId = 101
 
+sort1Id :: Int
+sort1Id = 102
+
+sort2Id :: Int
+sort2Id = 103
+
+sort3Id :: Int
+sort3Id = 104
+
+caseId :: Int
+caseId = 105
+
 drawMessage wnd = do
 	dc <- getDC (Just wnd)
 	font <- makeFont fW_NORMAL
 	oldFont <- selectFont dc font
 	white <- getStockBrush wHITE_BRUSH
-	fillRect dc (0, textBoxHeight + 1, 32767, 32767) white
-	textOut dc pad (textBoxHeight + pad) "Please wait"
+	fillRect dc (0, 2 * textBoxHeight + 1, 32767, 32767) white
+	textOut dc pad (2 * textBoxHeight + pad) "Please wait"
 	selectFont dc oldFont
 	deleteFont font
 	releaseDC (Just wnd) dc
 
-sortResults sortRef resultsRef = do
-	srt <- readIORef sortRef
+sortResults settingsRef resultsRef = do
+	srt <- readIORef settingsRef
 	(res, nKeywords) <- readIORef resultsRef
-	writeIORef resultsRef (sortBy (compare `on` \(s, _) -> case srt of
-		ByPath -> s
-		ByName -> takeFileName s
-		ByType -> takeExtension s) res,
+	writeIORef resultsRef (sortBy (compare `on` \(s, _) -> if srt == sort1Id then
+			s
+		else if srt == sort2Id then
+			takeFileName s
+		else
+			takeExtension s) res,
 		nKeywords)
 
-loWord :: LPARAM -> LPARAM
+loWord :: (Integral i, Bits i) => i -> i
 loWord n = n .&. 32767
 
-hiWord :: LPARAM -> LPARAM
+hiWord :: (Bits b) => b -> b
 hiWord n = shiftR n 16
 
 logicalCoord i nKeywords = ((nKeywords+1)*textHeight+3*pad+1)*i
 
-screenCoord i nKeywords scroll = logicalCoord i nKeywords + textBoxHeight - scroll
+screenCoord i nKeywords scroll = logicalCoord i nKeywords + 2 * textBoxHeight - scroll
 
 hitTest :: LPARAM -> IORef (t, Int32) -> IORef Int32 -> IO Int32
 hitTest y resultsRef scrollRef = do
 	(_, nKeywords) <- readIORef resultsRef
 	scroll <- readIORef scrollRef
-	return $ (y - textBoxHeight + scroll) `div` ((nKeywords+1)*textHeight+3*pad+1)
+	return $ (y - 2 * textBoxHeight + scroll) `div` ((nKeywords+1)*textHeight+3*pad+1)
 
 insertString txt s = withTString s $ \p -> sendMessage txt cB_INSERTSTRING 0 (unsafeCoerce p)
 
@@ -154,12 +168,11 @@ makeFont weight = catch
 
 quote s = "\"" ++ s ++ "\""
 
-wndProc :: IORef ([(String, [String])], Int32) -> IORef Sort -> IORef Int32 -> IORef [String] -> HWND -> UINT -> WPARAM -> LPARAM -> IO Int
-wndProc resultsRef sortRef scrollRef historyRef wnd msg wParam lParam
+wndProc :: IORef ([(String, [String])], Int32) -> IORef Int -> IORef Int32 -> IORef [String] -> HWND -> UINT -> WPARAM -> LPARAM -> IO Int
+wndProc resultsRef settingsRef scrollRef historyRef wnd msg wParam lParam
 	-- Handlers for commands involving individual results
-	| msg == wM_COMMAND && loWord (fromIntegral wParam) == fromIntegral btnId	= do
+	| msg == wM_COMMAND && loWord wParam == fromIntegral btnId	= do
 		-- Do a hit test on the control's position to determine which folder to open.
-		do
 		btn <- getDlgItem wnd btnId
 		(_, _, _, y) <- getWindowRect btn
 		(_, y) <- screenToClient wnd (0, y)
@@ -168,6 +181,11 @@ wndProc resultsRef sortRef scrollRef historyRef wnd msg wParam lParam
 		when (i < fromIntegral (length res)) $ do
 			createProcess (proc "explorer" [takeDirectory $ head $ split '@' $ fst $ res !! fromIntegral i])
 			return ()
+		return 0
+	| msg == wM_COMMAND && loWord wParam `elem` map fromIntegral [sort1Id, sort2Id, sort3Id]	= do
+		writeIORef settingsRef (fromIntegral (loWord wParam))
+		sortResults settingsRef resultsRef
+		invalidateRect (Just wnd) Nothing True
 		return 0
 	| msg == wM_LBUTTONDBLCLK	= do
 		(res, _) <- readIORef resultsRef
@@ -196,6 +214,7 @@ wndProc resultsRef sortRef scrollRef historyRef wnd msg wParam lParam
 	| msg == wM_COMMAND && wParam == iDOK	= do
 		txt <- getDlgItem wnd txtId
 		btn <- getDlgItem wnd btnId
+		res <- c_IsDlgButtonChecked wnd caseId
 		showWindow btn sW_HIDE
 		drawMessage wnd
 		s <- getWindowText txt
@@ -206,9 +225,9 @@ wndProc resultsRef sortRef scrollRef historyRef wnd msg wParam lParam
 			else do
 				insertString txt s
 				modifyIORef' historyRef (s:)
-				res <- lookKeywords keywords False
+				res <- lookKeywords keywords (res /= 0)
 				writeIORef resultsRef (res, fromIntegral $ length keywords)
-		sortResults sortRef resultsRef
+		sortResults settingsRef resultsRef
 		writeIORef scrollRef 0
 		invalidateRect (Just wnd) Nothing True
 		return 1
@@ -232,14 +251,25 @@ wndProc resultsRef sortRef scrollRef historyRef wnd msg wParam lParam
 		inst <- getModuleHandle Nothing
 		txt <- createWindow (mkClassName "ComboBox") "" (wS_VISIBLE .|. wS_CHILDWINDOW .|. cBS_HASSTRINGS .|. cBS_DROPDOWN) (Just 0) (Just 0) (Just 100) (Just 10) (Just wnd) Nothing inst (defWindowProc . Just)
 		btn <- createWindow (mkClassName "Button") "Open containing folder" wS_CHILDWINDOW (Just 0) (Just 0) (Just 100) (Just 10) (Just wnd) Nothing inst (defWindowProc . Just)
+		sort1 <- createWindow (mkClassName "Button") "Sort by path" (wS_VISIBLE .|. wS_CHILDWINDOW .|. bS_AUTORADIOBUTTON) (Just 0) (Just textBoxHeight) (Just 100) (Just textBoxHeight) (Just wnd) Nothing inst (defWindowProc . Just)
+		sort2 <- createWindow (mkClassName "Button") "Sort by name" (wS_VISIBLE .|. wS_CHILDWINDOW .|. bS_AUTORADIOBUTTON) (Just 100) (Just textBoxHeight) (Just 100) (Just textBoxHeight) (Just wnd) Nothing inst (defWindowProc . Just)
+		sort3 <- createWindow (mkClassName "Button") "Sort by type" (wS_VISIBLE .|. wS_CHILDWINDOW .|. bS_AUTORADIOBUTTON) (Just 200) (Just textBoxHeight) (Just 100) (Just textBoxHeight) (Just wnd) Nothing inst (defWindowProc . Just)
+		caseBtn <- createWindow (mkClassName "Button") "Case sensitive" (wS_VISIBLE .|. wS_CHILDWINDOW .|. bS_AUTOCHECKBOX) (Just 300) (Just textBoxHeight) (Just 100) (Just textBoxHeight) (Just wnd) Nothing inst (defWindowProc . Just)
+		createWindow (mkClassName "Static") "" (wS_VISIBLE .|. wS_CHILDWINDOW) (Just 400) (Just textBoxHeight) (Just 32767) (Just textBoxHeight) (Just wnd) Nothing inst (defWindowProc . Just)
 		c_SetWindowLongPtr txt gWLP_ID (unsafeCoerce txtId)
 		c_SetWindowLongPtr btn gWLP_ID (unsafeCoerce btnId)
+		c_SetWindowLongPtr sort1 gWLP_ID (unsafeCoerce sort1Id)
+		c_SetWindowLongPtr sort2 gWLP_ID (unsafeCoerce sort2Id)
+		c_SetWindowLongPtr sort3 gWLP_ID (unsafeCoerce sort3Id)
+		c_SetWindowLongPtr caseBtn gWLP_ID (unsafeCoerce caseId)
 		readHistory txt historyRef
 		font <- makeFont fW_NORMAL
 		edit <- getWindow txt gW_CHILD
 		subclassProc edit (txtProc wnd)
-		sendMessage txt wM_SETFONT (unsafeCoerce font) 1
-	        sendMessage btn wM_SETFONT (unsafeCoerce font) 1
+		mapM_
+			(\wnd -> sendMessage wnd wM_SETFONT (unsafeCoerce font) 1)
+			[txt, btn, sort1, sort2, sort3, caseBtn]
+		checkRadioButton wnd sort1Id sort3Id sort1Id
 		setFocus txt
 		return 0
 	| msg == wM_SIZE	= catch
@@ -247,7 +277,7 @@ wndProc resultsRef sortRef scrollRef historyRef wnd msg wParam lParam
 		txt <- getDlgItem wnd txtId
 		btn <- getDlgItem wnd btnId
 		(_, _, x, y) <- getClientRect wnd
-		moveWindow txt 0 0 (fromIntegral x) 300 True
+		moveWindow txt 0 0 (fromIntegral x) textBoxHeight True
 		showWindow btn sW_HIDE
 		return 0)
 		(\(_ :: SomeException) -> return 0)
@@ -262,7 +292,7 @@ wndProc resultsRef sortRef scrollRef historyRef wnd msg wParam lParam
 		oldFont <- selectFont dc fontBold
 
 		pen <- createPen pS_SOLID 0 (rgb 192 192 192)
-		yRef <- newIORef (textBoxHeight - scroll)
+		yRef <- newIORef (2 * textBoxHeight - scroll)
 		mapM_
 			(\(result, contexts) -> do
 				y <- readIORef yRef
@@ -303,14 +333,14 @@ wndProc resultsRef sortRef scrollRef historyRef wnd msg wParam lParam
 
 winMain = do
 	resultsRef <- newIORef ([], 0)
-	sortRef <- newIORef ByPath
+	settingsRef <- newIORef sort1Id
 	scrollRef <- newIORef 0
 	historyRef <- newIORef []
 	inst <- getModuleHandle Nothing
 	let tmp = DialogTemplate 0 0 640 480 (wS_VISIBLE .|. wS_OVERLAPPEDWINDOW .|. wS_CLIPCHILDREN) 0 (Left 0) (Left 0) (Right "Desktop Search") (Left 0) 14
 		[]
 	tmp2 <- mkDialogFromTemplate tmp
-	dialogBoxIndirect inst tmp2 Nothing (wndProc resultsRef sortRef scrollRef historyRef)
+	dialogBoxIndirect inst tmp2 Nothing (wndProc resultsRef settingsRef scrollRef historyRef)
 
 	allocaMessage $ \msg ->
 		let loop = do
