@@ -1,9 +1,7 @@
-{-# LANGUAGE ForeignFunctionInterface, ScopedTypeVariables #-}
+{-# LANGUAGE ForeignFunctionInterface, ScopedTypeVariables, CPP #-}
 
 module Main (main) where
 
-import Graphics.Win32
-import System.Win32.DLL
 import Data.IORef
 import Data.Bits
 import Data.Int
@@ -23,7 +21,10 @@ import Foreign.ForeignPtr
 import Indexing
 import Unpacks
 import Split
+#ifdef WIN32
 import Subclass
+import Graphics.Win32
+import System.Win32.DLL
 
 foreign import stdcall "windows.h GetWindowTextW" c_GetWindowText :: HWND -> LPTSTR -> Int32 -> IO LRESULT
 
@@ -353,6 +354,7 @@ winMain = do
 			dispatchMessage msg
 			loop in
 		loop
+#endif
 
 main = do
 	args <- getArgs
@@ -364,7 +366,11 @@ main = do
 			dir <- canonicalizePath (args !! 1)
 			indexWrapper (appendDelimiter dir)
 	else if null keywords then
+#ifdef WIN32
 		winMain
+#else
+		putStrLn "Index: no keywords"
+#endif
 	else do
 		let caseSensitive = "-c" `elem` args
 		results <- lookKeywords keywords caseSensitive
