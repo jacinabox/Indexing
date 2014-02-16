@@ -1,9 +1,12 @@
+{-# LANGUAGE CPP #-}
+
 module Subclass (subclassProc) where
 
 import Unsafe.Coerce
 import Data.IORef
 import Foreign.Ptr
 import Control.Monad
+#ifdef WIN32
 import Graphics.Win32
 
 foreign import stdcall "windows.h CallWindowProcW" callWindowProc :: FunPtr WindowClosure -> HWND -> UINT -> WPARAM -> LPARAM -> IO LRESULT
@@ -29,3 +32,6 @@ subclassProc wnd proc = do
 	funPtr <- mkWindowClosure closure
 	oldProc <- c_SetWindowLongPtr wnd gWLP_WNDPROC (unsafeCoerce funPtr)
 	writeIORef procVar (Just (funPtr, oldProc))
+#else
+subclassProc = undefined
+#endif
