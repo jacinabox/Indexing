@@ -1,0 +1,178 @@
+	Tue Oct 22 14:13 2013 Time and Allocation Profiling Report  (Final)
+
+	   index.exe +RTS -p -RTS -i ../Documents/
+
+	total time  =      516.36 secs   (516356 ticks @ 1000 us, 1 processor)
+	total alloc = 164,076,349,804 bytes  (excludes profiling overheads)
+
+COST CENTRE        MODULE   %time %alloc
+
+index.loop         Indexing  46.5    9.2
+indexWrapper       Indexing  21.2   71.9
+getUnpackDir       Unpacks   14.7    3.7
+index              Indexing   6.6    0.2
+details2           Indexing   2.6    0.0
+replace            Replace    2.4    4.3
+replace.stripped.\ Replace    2.2    3.4
+replace.stripped   Replace    1.7    4.0
+toUpperCase        Indexing   1.5    1.9
+
+
+                                                                                  individual     inherited
+COST CENTRE                          MODULE                     no.     entries  %time %alloc   %time %alloc
+
+MAIN                                 MAIN                        67           0    0.0    0.0   100.0  100.0
+ main                                Main                       135           0    0.0    0.0   100.0  100.0
+  indexWrapper                       Indexing                   136           1   21.2   71.9   100.0  100.0
+   indexWrapper.\                    Indexing                   272     1600622    0.1    0.1     0.1    0.1
+   indexDirectory                    Indexing                   147         843    0.0    0.0    78.7   27.9
+    indexDirectory.\                 Indexing                   148        8585    0.0    0.0    78.7   27.9
+     index                           Indexing                   183         204    0.1    0.0     0.7    0.3
+      index.\                        Indexing                   262           1    0.0    0.0     0.0    0.0
+      toUpperCase                    Indexing                   196         164    0.0    0.0     0.0    0.0
+      index.loop                     Indexing                   190      162860    0.6    0.1     0.7    0.3
+       index.loop.add                Indexing                   192      162696    0.0    0.0     0.0    0.0
+        toUpperCase                  Indexing                   193      162696    0.0    0.0     0.0    0.0
+       replace                       Replace                    191      976176    0.0    0.1     0.1    0.2
+        replace.stripped             Replace                    194      813480    0.0    0.1     0.0    0.1
+         replace.stripped.\          Replace                    195     1605503    0.0    0.0     0.0    0.0
+      index.loop                     Indexing                   188       61079    0.0    0.0     0.0    0.0
+       isPrintable                   Indexing                   189       60915    0.0    0.0     0.0    0.0
+      indexAddition                  Indexing                   184         204    0.0    0.0     0.0    0.0
+       indexAddition.\               Indexing                   187         703    0.0    0.0     0.0    0.0
+       chunks0                       Indexing                   186         907    0.0    0.0     0.0    0.0
+       toUpperCase                   Indexing                   185         204    0.0    0.0     0.0    0.0
+     details1                        Indexing                   182         212    0.0    0.0     0.6    0.2
+      details1.\                     Indexing                   230           4    0.0    0.0     0.6    0.2
+       indexDirectory.\.logicalName  Indexing                   247           4    0.0    0.0     0.0    0.0
+       index                         Indexing                   242           4    0.0    0.0     0.1    0.0
+        toUpperCase                  Indexing                   256           4    0.0    0.0     0.0    0.0
+        index.loop                   Indexing                   250       11688    0.1    0.0     0.1    0.0
+         index.loop.add              Indexing                   252       11684    0.0    0.0     0.0    0.0
+          toUpperCase                Indexing                   253       11684    0.0    0.0     0.0    0.0
+         replace                     Replace                    251       70104    0.0    0.0     0.0    0.0
+          replace.stripped           Replace                    254       58420    0.0    0.0     0.0    0.0
+           replace.stripped.\        Replace                    255      115931    0.0    0.0     0.0    0.0
+        index.loop                   Indexing                   248        1543    0.0    0.0     0.0    0.0
+         isPrintable                 Indexing                   249        1539    0.0    0.0     0.0    0.0
+        indexAddition                Indexing                   243           4    0.0    0.0     0.0    0.0
+         indexAddition.\             Indexing                   246          12    0.0    0.0     0.0    0.0
+         chunks0                     Indexing                   245          16    0.0    0.0     0.0    0.0
+         toUpperCase                 Indexing                   244           4    0.0    0.0     0.0    0.0
+       indexDirectory.\.name         Indexing                   241           4    0.0    0.0     0.0    0.0
+       unpacks                       Unpacks                    231           0    0.0    0.0     0.5    0.2
+        convertFile                  Unpacks                    232           4    0.0    0.0     0.5    0.2
+         convertHtml                 Unpacks                    236           4    0.0    0.0     0.0    0.0
+          convertHtml0               Unpacks                    238       65130    0.0    0.0     0.0    0.0
+          replace                    Replace                    237       57519    0.0    0.0     0.0    0.0
+           replace.stripped          Replace                    239       57515    0.0    0.0     0.0    0.0
+            replace.stripped.\       Replace                    240      287167    0.0    0.0     0.0    0.0
+         getUnpackDir                Unpacks                    233       18684    0.5    0.1     0.5    0.1
+          getUnpackDir.\             Unpacks                    235       18680    0.0    0.0     0.0    0.0
+          getUnpackDir.path          Unpacks                    234       18684    0.0    0.0     0.0    0.0
+     indexDirectory.\.logicalName    Indexing                   165         241    0.0    0.0     0.0    0.0
+     details2                        Indexing                   152         725    2.6    0.0    77.3   27.3
+      indexDirectory.\               Indexing                   263           3    0.0    0.0     0.0    0.0
+      indexDirectory.\.logicalName   Indexing                   164        6254    0.0    0.0     0.0    0.0
+      index                          Indexing                   157        5661    6.5    0.1    58.5   22.7
+       index.\                       Indexing                   271           1    0.0    0.0     0.0    0.0
+       toUpperCase                   Indexing                   175        3211    0.0    0.0     0.0    0.0
+       index.loop                    Indexing                   168    11793534   44.4    8.9    51.9   22.3
+        index.loop.add               Indexing                   170    11790323    0.1    0.4     1.5    2.3
+         toUpperCase                 Indexing                   171    11790323    1.5    1.9     1.5    1.9
+        replace                      Replace                    169    70741938    2.3    4.1     5.9   11.1
+         replace.stripped            Replace                    172    58951615    1.6    3.7     3.6    7.0
+          replace.stripped.\         Replace                    173   114773084    2.1    3.2     2.1    3.2
+       index.loop                    Indexing                   166     1328987    0.1    0.2     0.1    0.2
+        isPrintable                  Indexing                   167     1325776    0.0    0.0     0.0    0.0
+       indexAddition                 Indexing                   158        5660    0.0    0.0     0.0    0.0
+        indexAddition.\              Indexing                   163       23085    0.0    0.0     0.0    0.0
+        chunks0                      Indexing                   160       28745    0.0    0.0     0.0    0.0
+        toUpperCase                  Indexing                   159        5660    0.0    0.0     0.0    0.0
+      details1                       Indexing                   155        5968    0.0    0.0    16.2    4.6
+       details1.\                    Indexing                   198         113    0.0    0.0    16.1    4.6
+        indexDirectory.\.logicalName Indexing                   215         243    0.0    0.0     0.0    0.0
+        index                        Indexing                   210         194    0.0    0.0     1.5    0.4
+         toUpperCase                 Indexing                   224         144    0.0    0.0     0.0    0.0
+         index.loop                  Indexing                   218      195271    1.4    0.2     1.5    0.4
+          index.loop.add             Indexing                   220      195127    0.0    0.0     0.0    0.0
+           toUpperCase               Indexing                   221      195127    0.0    0.0     0.0    0.0
+          replace                    Replace                    219     1170762    0.0    0.1     0.1    0.2
+           replace.stripped          Replace                    222      975635    0.0    0.1     0.1    0.1
+            replace.stripped.\       Replace                    223     1934355    0.0    0.1     0.0    0.1
+         index.loop                  Indexing                   216       55731    0.0    0.0     0.0    0.0
+          isPrintable                Indexing                   217       55587    0.0    0.0     0.0    0.0
+         indexAddition               Indexing                   211         194    0.0    0.0     0.0    0.0
+          indexAddition.\            Indexing                   214         543    0.0    0.0     0.0    0.0
+          chunks0                    Indexing                   213         737    0.0    0.0     0.0    0.0
+          toUpperCase                Indexing                   212         194    0.0    0.0     0.0    0.0
+        indexDirectory.\.name        Indexing                   209         243    0.0    0.0     0.0    0.0
+        unpacks                      Unpacks                    199           0    0.0    0.0    14.6    4.2
+         unpack                      Unpacks                    264          30    0.0    0.0     3.8    1.0
+          unpack.\                   Unpacks                    269          16    0.0    0.0     0.0    0.0
+          unpack.path2               Unpacks                    268          30    0.0    0.0     0.0    0.0
+          getUnpackDir               Unpacks                    265      140089    3.7    0.9     3.8    1.0
+           getUnpackDir.\            Unpacks                    267      140059    0.0    0.0     0.0    0.0
+           getUnpackDir.path         Unpacks                    266      140089    0.0    0.1     0.0    0.1
+         convertFile                 Unpacks                    200          83    0.1    0.0    10.8    3.2
+          convertHtml                Unpacks                    204          83    0.0    0.0     0.1    0.3
+           convertHtml0              Unpacks                    206      791831    0.0    0.0     0.0    0.0
+           replace                   Replace                    205      681772    0.0    0.1     0.1    0.3
+            replace.stripped         Replace                    207      681689    0.0    0.1     0.1    0.2
+             replace.stripped.\      Replace                    208     3329636    0.0    0.1     0.0    0.1
+          getUnpackDir               Unpacks                    201      389138   10.5    2.6    10.6    2.9
+           getUnpackDir.\            Unpacks                    203      389055    0.0    0.0     0.0    0.0
+           getUnpackDir.path         Unpacks                    202      389138    0.1    0.3     0.1    0.3
+      indexDirectory.\.name          Indexing                   154        6409    0.0    0.0     0.0    0.0
+     indexDirectory.\.name           Indexing                   151         249    0.0    0.0     0.0    0.0
+   indexWrapper.mp                   Indexing                   140           1    0.0    0.0     0.0    0.1
+    getAssocs                        Indexing                   141           1    0.0    0.1     0.0    0.1
+     getAssocs.\                     Indexing                   144       14899    0.0    0.0     0.0    0.0
+     split                           Split                      143       46473    0.0    0.0     0.0    0.0
+      split.z                        Split                      174       31435    0.0    0.0     0.0    0.0
+      split.(...)                    Split                      146       31570    0.0    0.0     0.0    0.0
+      split.zs                       Split                      145       31570    0.0    0.0     0.0    0.0
+   indexFileName                     Indexing                   138           0    0.0    0.0     0.0    0.0
+ CAF                                 GHC.IO.Encoding.Failure    132           0    0.0    0.0     0.0    0.0
+ CAF                                 GHC.IO.FD                  118           0    0.0    0.0     0.0    0.0
+ CAF                                 GHC.IO.Encoding.CodePage   117           0    0.0    0.0     0.0    0.0
+ CAF                                 System.IO                  109           0    0.0    0.0     0.0    0.0
+ CAF                                 System.Environment         108           0    0.0    0.0     0.0    0.0
+ CAF                                 GHC.IO.Encoding            107           0    0.0    0.0     0.0    0.0
+ CAF                                 GHC.IO.Handle.Text         103           0    0.0    0.0     0.0    0.0
+ CAF                                 GHC.IO.Handle.FD           100           0    0.0    0.0     0.0    0.0
+ CAF                                 GHC.IO.Exception            99           0    0.0    0.0     0.0    0.0
+ CAF                                 System.Win32.Types          94           0    0.0    0.0     0.0    0.0
+ CAF                                 System.FilePath.Windows     83           0    0.0    0.0     0.0    0.0
+ CAF                                 System.Directory            82           0    0.0    0.0     0.0    0.0
+ CAF                                 System.Process.Internals    81           0    0.0    0.0     0.0    0.0
+ CAF                                 Unpacks                     79           0    0.0    0.0     0.0    0.0
+  unpacks                            Unpacks                    156           1    0.0    0.0     0.0    0.0
+  pathDelimiter                      Unpacks                    139           1    0.0    0.0     0.0    0.0
+ CAF                                 Indexing                    75           0    0.0    0.0     0.0    0.0
+  indexDirectory                     Indexing                   149           0    0.0    0.0     0.0    0.0
+   indexDirectory.\                  Indexing                   150           0    0.0    0.0     0.0    0.0
+    index                            Indexing                   161           0    0.0    0.0     0.0    0.0
+     indexAddition                   Indexing                   162           0    0.0    0.0     0.0    0.0
+    details2                         Indexing                   153           0    0.0    0.0     0.0    0.0
+  indexFileName                      Indexing                   137           1    0.0    0.0     0.0    0.0
+ CAF                                 Main                        74           0    0.0    0.0     0.0    0.0
+  main                               Main                       134           1    0.0    0.0     0.0    0.0
+  main                               Main                       176           0    0.0    0.0     0.0    0.0
+   indexWrapper                      Indexing                   177           0    0.0    0.0     0.0    0.0
+    indexDirectory                   Indexing                   178           0    0.0    0.0     0.0    0.0
+     indexDirectory.\                Indexing                   179           0    0.0    0.0     0.0    0.0
+      details1                       Indexing                   257           0    0.0    0.0     0.0    0.0
+       details1.\                    Indexing                   258           0    0.0    0.0     0.0    0.0
+        index                        Indexing                   261           0    0.0    0.0     0.0    0.0
+        unpacks                      Unpacks                    259           0    0.0    0.0     0.0    0.0
+         convertFile                 Unpacks                    260           0    0.0    0.0     0.0    0.0
+      index                          Indexing                   197           0    0.0    0.0     0.0    0.0
+      details2                       Indexing                   180           0    0.0    0.0     0.0    0.0
+       details1                      Indexing                   225           0    0.0    0.0     0.0    0.0
+        details1.\                   Indexing                   226           0    0.0    0.0     0.0    0.0
+         index                       Indexing                   229           0    0.0    0.0     0.0    0.0
+         unpacks                     Unpacks                    227           0    0.0    0.0     0.0    0.0
+          unpack                     Unpacks                    270           0    0.0    0.0     0.0    0.0
+          convertFile                Unpacks                    228           0    0.0    0.0     0.0    0.0
+       index                         Indexing                   181           0    0.0    0.0     0.0    0.0

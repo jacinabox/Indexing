@@ -139,7 +139,7 @@ openHistory mode = do
 	return fl
 
 readHistory txt historyRef = do
-	fl <- openHistory ReadWriteMode
+	fl <- openHistory ReadMode
 	text <- hGetContents fl
 	mapM_ (insertString txt) (lines text)
 	hClose fl

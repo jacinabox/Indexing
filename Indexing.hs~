@@ -177,7 +177,7 @@ lookUp (Index hdl overflow) caseSensitive string = catch
 			if b then
 					return Nothing
 				else do
-					path <- liftM (reverse . dropWhile (=='\0') . reverse . unpack) $ hGet overflow 128
+					path <- liftM (reverse . dropWhile (=='\0') . reverse . unpack) $ hGet hdl 128
 					inxd <- openBinaryFile path ReadMode
 					contents <- hGetContents inxd
 					return $ Just $ case findIndex (isPrefixOf string1) $ tails $ (if caseSensitive then id else map toUpper) contents of

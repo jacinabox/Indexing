@@ -1,0 +1,40 @@
+module Normalize (normalizeText) where
+
+import Data.Array
+import Data.Char
+import Data.Word
+
+normalizeText0 :: [Word8] -> [Int]
+normalizeText0 c = if inRange (192, 197) c then
+		ord 'A'
+	else if inRange (224, 229) c then
+		ord 'a'
+	else if c == 231 then
+		ord 'C'
+	else if c == 199 then
+		ord 'c'
+	else if inRange (200, 203) c then
+		ord 'E'
+	else if inRange (232, 235) c then
+		ord 'e'
+	else if inRange (204, 207) c then
+		ord 'I'
+	else if inRange (236, 239) c then
+		ord 'i'
+	else if inRange (210, 214) c then
+		ord 'O'
+	else if inRange (242, 246) c then
+		ord 'o'
+	else if inRange (217, 220) c then
+		ord 'U'
+	else if inRange (249, 252) c then
+		ord 'u'
+	else if c == 221 then
+		ord 'Y'
+	else if c == 253 then	
+		ord 'y'
+	else
+		fromIntegral c
+
+normalizeText :: [Word8] -> [Word8]
+normalizeText s = map (fromIntegral . normalizeText0) s

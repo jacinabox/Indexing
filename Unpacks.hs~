@@ -1,6 +1,6 @@
 {-# LANGUAGE CPP, ScopedTypeVariables, MultiParamTypeClasses #-}
 
-module Unpacks (unpacks, pathDelimiter, appendDelimiter, customQuery, Rec(Rec), database, getTable, record) where
+module Unpacks (unpacks, pathDelimiter, appendDelimiter, customQuery, Rec(Rec), database, table, record) where
 
 import Data.List
 import Data.Char
