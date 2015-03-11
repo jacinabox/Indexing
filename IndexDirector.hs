@@ -5,7 +5,6 @@ module IndexDirector (indexDatabase, indexWrapper, fullIndex, lookKeywords, pars
 import Data.List hiding (union, insert)
 import Control.Monad
 import System.Directory
-import File.Binary
 import System.IO
 import Data.Char
 import Data.Function
@@ -15,7 +14,6 @@ import System.FilePath
 import Control.Exception
 import Data.Maybe
 import System.IO.Error
-import Control.Parallel.Strategies
 import Data.ByteString.Char8 (unpack, hGet)
 import Prelude hiding (catch)
 
@@ -63,12 +61,16 @@ indexDirectory dir logicalDir idx = do
 		unless (nm == "." || nm == "..") $ do
 		b <- doesFileExist name
 		if b then
-				details1 name logicalName idx {-Primary control flow:-}(readBinaryFile name >>= \contents -> catch (index idx logicalName contents) (\(ex :: IndexingError) -> putStr "*** " >> print ex))
+				details1 name logicalName idx {-Primary control flow:-}(bracket (openBinaryFile name ReadMode)
+			hClose
+			$ \hdl -> do
+			contents <- hGetContents hdl
+			catch (index idx logicalName contents) (\(ex :: IndexingError) -> putStr "*** " >> print ex))
 			else
 				details2 name {-Primary control flow:-}(indexDirectory (name ++ [pathDelimiter]) (logicalName ++ [pathDelimiter]) idx))
 		contents
 
-indexDatabase ident idx = do
+indexDatabase ident idx = undefined{-do
 	tables <- database ident
 	mapM_ (\tab -> do
 		recs <- getTable ident tab
@@ -76,7 +78,7 @@ indexDatabase ident idx = do
 			Rec ls <- record ident tab rec
 			index idx (appendDelimiter ident ++ appendDelimiter tab ++ rec) $ concatMap (maybe "@" ('@':) . snd) ls)
 			recs)
-		tables
+		tables-}
 
 indexWrapper dir = do
 	(idxNm, idxNm2) <- indexFileName

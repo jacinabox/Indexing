@@ -50,7 +50,7 @@ interlace mask x = if x == 0 || mask == 0 then
 	else
 		shiftL (interlace (shiftR mask 1) x) 1
 
-compatiblePlaces1 window = map ((.|. hash) . interlace bits) [0..nBits bits - 1] where
+compatiblePlaces1 window = map ((.|. hash) . interlace bits) [0..2 ^ nBits bits - 1] where
 	hash = hashWindow window
 	bits = (2 ^ 16 - 1) .&. complement hash
 

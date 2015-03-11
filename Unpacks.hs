@@ -1,6 +1,6 @@
 {-# LANGUAGE CPP, ScopedTypeVariables, MultiParamTypeClasses #-}
 
-module Unpacks (unpacks, pathDelimiter, appendDelimiter, customQuery, Rec(Rec), database, getTable, record) where
+module Unpacks (unpacks, pathDelimiter, appendDelimiter, customQuery,{- Rec(Rec),-} database, getTable, record) where
 
 import Data.List
 import Data.Char
@@ -10,9 +10,9 @@ import System.FilePath
 import Control.Exception
 import Control.Monad
 import Control.Monad.Maybe
-import Database.HaskellDB
-import Database.HaskellDB.Database
-import Database.HaskellDB.PrimQuery
+-- import Database.HaskellDB
+-- import Database.HaskellDB.Database
+-- import Database.HaskellDB.PrimQuery
 --import Database.HaskellDB.HSQL.MySQL
 import Prelude hiding (catch)
 import Replace
@@ -167,10 +167,10 @@ customQuery db tab sql = undefined{-do
 	(col, _):_ <- describe tab
 	query db $ restrict (col .==. literal ("''; " ++ sql)) (table tab)-}
 
-primaryKey db tab = customQuery db tab $ "SHOW KEYS FROM `" ++ tab ++ "` WHERE Key_name = 'PRIMARY'"
+-- primaryKey db tab = customQuery db tab $ "SHOW KEYS FROM `" ++ tab ++ "` WHERE Key_name = 'PRIMARY'"
 
 -- | A typeless record type, for use when the record type is not known in advance.
-newtype Rec t = Rec [(Attribute, Maybe String)] deriving (Read, Show, Eq, Ord)
+-- newtype Rec t = Rec [(Attribute, Maybe String)] deriving (Read, Show, Eq, Ord)
 
 liftMay m = m >>= maybe mzero return
 
