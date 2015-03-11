@@ -1,7 +1,7 @@
 {-# LANGUAGE DeriveDataTypeable, ScopedTypeVariables #-}
 
 -- | Monotone hash based index.
-module Indexing (pad, openIndex, closeIndex, Index, IndexingError(..), index, lookUp) where
+module Indexing (pad, openIndex, closeIndex, Index, IndexingError(..), QueryOptions(..), index, MemoryIndex, readIndex, lookUp) where
 
 import System.Random
 import Control.Monad.Random
@@ -9,17 +9,22 @@ import System.IO
 import Control.Exception
 import Control.Monad.Loops
 import Control.Monad
-import Data.Array hiding (index)
+import Data.Array.IArray hiding (index)
+import Data.Array (Array)
+import Data.Array.Unboxed (UArray)
 import Data.Int
 import Data.Bits
 import Data.Char
 import Data.List
 import Data.Typeable
-import Data.ByteString.Char8 (unpack, hGet)
+import Data.Function
+import Data.ByteString.Char8 (ByteString, unpack, hGet)
 import Foreign.Storable
 import Foreign.Marshal.Alloc
 import Foreign.Marshal.Utils
 import Prelude hiding (catch)
+
+import Unpacks
 
 pad _ 0 ls = ls
 pad with n [] = replicate n with
@@ -28,19 +33,16 @@ pad with n (x:xs) = x : pad with (n - 1) xs
 windows sz ls = pad '\0' sz (take sz ls) : if null dr then [] else windows sz dr where
 	dr = drop 5 ls
 
-bits :: Array Int Int
-bits = listArray (0, 256 * 10 - 1) $ evalRand (mapM (\_ -> getRandomR (0, 15)) [0..256 * 10 - 1]) (mkStdGen 0)
+bits :: Array Int [Int]
+bits = listArray (0, 255) $ evalRand (mapM (\_ -> mapM (\_ -> getRandomR (0, 15)) [(), (), ()]) [0..255]) (mkStdGen 0)
 
-hashByte (hash, i) x = (if x == '\0' then
+hashByte hash x = if x == '\0' || ord x > 255 then
 		hash
 	else
-		setBit hash (bits ! (256 * i + ord x)),
-	i + 1)
+		foldl setBit hash (bits ! ord x)
 
 hashWindow :: String -> Int32
-hashWindow = fst . foldl hashByte (0, 0)
-
-nBits x = sum $ map ((.&. 1) . shiftR x) [0..15]
+hashWindow = foldl hashByte 0
 
 -- Put the bits in x in the 1 positions in mask
 interlace mask x = if x == 0 || mask == 0 then
@@ -50,10 +52,12 @@ interlace mask x = if x == 0 || mask == 0 then
 	else
 		shiftL (interlace (shiftR mask 1) x) 1
 
-compatiblePlaces1 window = map ((.|. hash) . interlace bits) [0..nBits bits - 1] where
+compatiblePlaces1 :: String -> [Int32]
+compatiblePlaces1 window = map ((.|. hash) . interlace bits) [0..2 ^ popCount bits - 1] where
 	hash = hashWindow window
-	bits = (2 ^ 16 - 1) .&. complement hash
+	bits = xor hash 65535
 
+compatiblePlaces :: String -> [(Int32, Int32)]
 compatiblePlaces window = concat $ zipWith (\n -> map ((,) n) . compatiblePlaces1 . take 10 . (++window)) [4,3..0] (tails (replicate 4 '\0'))
 
 superblockSize :: Int32
@@ -68,12 +72,14 @@ openIndex path overflow = do
 
 closeIndex (Index hdl overflow) = hClose hdl >> hClose overflow
 
-data Index = Index Handle Handle deriving Eq
+data Index = Index !Handle !Handle deriving Eq
 
 data IndexingError = PathTooLong -- a path was too long
 	| ResourceError deriving (Show, Typeable) -- an internal error occurred
 
 instance Exception IndexingError
+
+data QueryOptions = QueryOptions { caseSensitive :: !Bool, inArchives :: !Bool }
 
 hGetInt32 :: Handle -> IO Int32
 hGetInt32 hdl = do
@@ -89,86 +95,108 @@ hPutInt32 hdl x = do
 		(do { poke p x; hPutBuf hdl p 4 })
 		(free p)
 
-seekForWindow hdl loc place = hSeek hdl AbsoluteSeek (toInteger $ 2 ^ 9 * loc + 8 * place)
+seekForWindow idx i j = hSeek idx AbsoluteSeek $ toInteger $ 2 ^ 9 * i + 8 * j
 
 printable x = ord x >= 32 && ord x <= 255 || ord x == 10 || ord x == 13
 
 interesting = any (`notElem` "\t\n\r ")
+
+data MemoryIndex = MemoryIndex !Index !(UArray (Int32, Int32) Int32) !(Array Int32 ByteString)
+
+readIndex idx@(Index hdl _) = do
+	sz <- hFileSize hdl
+	hSeek hdl AbsoluteSeek 0
+	ls <- mapM (\_ -> hGetInt32 hdl) [0..2 ^ 23 - 1]
+	ls2 <- fix $ \next -> do
+		b <- hIsEOF hdl
+		if b then
+				return []
+			else
+				liftM2 (:) (hGet hdl 128) next
+	return $! MemoryIndex idx (listArray rng ls) (listArray (0, (fromInteger sz - superblockSize) `quot` 128) ls2) where
+	rng = ((0, 0), (2 ^ 16 - 1, 2 ^ 7 - 1))
 
 index :: Index -> FilePath -> String -> IO ()
 index (Index idx overflow) path contents = do
 	-- Check path length
 	when (length path > 128) $ throwIO PathTooLong
 
-	catch (do
-		-- Add the path to the path array
-		hSeek idx SeekFromEnd 0
-		pathI <- liftM ((`quot` 128) . subtract superblockSize . fromInteger) (hTell idx)
-		hPutStr idx (pad '\0' 128 path)
+	-- Add the path to the path array
+	hSeek idx SeekFromEnd 0
+	pathI <- liftM ((`quot` 128) . subtract superblockSize . fromInteger) (hTell idx)
+	hPutStr idx (pad '\0' 128 path)
 
-		-- Index the file
-		foldr (\(i, window) next1 -> when (interesting window) $ do
-			-- Search for a place
-			foldr (\i next -> do
-				-- Seek to the point in the file where the window should go
-				seekForWindow idx i 0
+	-- Index the file
+	foldr (\(i, window) next1 -> when (interesting window) $ do
+		-- Search for a place
+		foldr (\k next -> do
+			-- Seek to the point in the file where the window should go
+			seekForWindow idx k 0
 
-				foldr (\i next0 -> do
-					pathI1 <- hGetInt32 idx
-					if pathI1 == 0 then do
-							hSeek idx RelativeSeek (-4)
-							hPutInt32 idx pathI
-							hPutInt32 idx i
-							next1
-						else do
-							hGetInt32 idx
-							next0)
-					next
-					[0..2 ^ 6 - 1])
-				(do
-				hSeek overflow SeekFromEnd 0
-				hPutStr overflow (pad '\0' 128 path))
-				(compatiblePlaces1 window))
-			(return ())
-			$ zip [0,5..] (windows 10 $ map toUpper $ takeWhile printable contents))
-		(\(_ :: IOError) -> throwIO ResourceError)
+			foldr (\_ next0 -> do
+				pathI1 <- hGetInt32 idx
+				j <- hGetInt32 idx
+				if pathI1 == 0 then do
+						hSeek idx RelativeSeek (-8)
+						hPutInt32 idx pathI
+						hPutInt32 idx i
+						next1
+					else if pathI1 == pathI && j == i then -- Prevent duplicates
+						next1
+					else
+						next0)
+				next
+				[0..2 ^ 6 - 1])
+			(do
+			hSeek overflow SeekFromEnd 0
+			hPutStr overflow (pad '\0' 128 path))
+			$ compatiblePlaces1 window)
+		(return ())
+		$ zip [0,5..] (windows 10 $ map toUpper $ takeWhile printable contents)
 
-lookUp :: Index -> Bool -> String -> IO [(FilePath, Int32)]
-lookUp (Index hdl overflow) caseSensitive string = catch
-	(do
-	let string1 = (if caseSensitive then id else map toUpper) string
+getFile' options path = if inArchives options || '@' `notElem` path then
+		getFile path
+	else
+		return nullDevice
+
+lookUp :: MemoryIndex -> QueryOptions -> String -> IO [(FilePath, Int32)]
+lookUp (MemoryIndex (Index hdl overflow) superblock remainder) options string = do
+	let string1 = (if caseSensitive options then id else map toUpper) string
 	buf <- mallocBytes 128
 	finally
-		-- Inspect each file at the stated position for the string
+		-- Get positions for the string
 		(do
-		res <- mapM (\(offset, i) ->
-			foldr (\j next -> do
-			-- Seek to the window position
-			seekForWindow hdl i j
-
-			pathI <- hGetInt32 hdl
-			k <- hGetInt32 hdl
-
-			-- Get the path
-			hSeek hdl AbsoluteSeek (toInteger $ superblockSize + 128 * pathI)
-			path <- liftM (reverse . dropWhile (=='\0') . reverse . unpack) $ hGet hdl 128
-
-			-- Check if the string is at the stated position
+		let positions = map (\ls -> (fst (head ls), map snd ls)) $ groupBy ((==) `on` fst) $ sort $ concatMap (\(offset, i) ->
+			foldr (\j next ->
+			let
+				pathI = superblock ! (i, 2 * j)
+				k = superblock ! (i, 2 * j + 1)
+				path = reverse $ dropWhile (=='\0') $ reverse $ unpack $ remainder ! pathI in
 			if pathI == 0 then
-					return []
+					[]
 				else
-				liftM2 (++) (catch
-				(do
-					inxd <- openBinaryFile path ReadMode
-					finally (do
-						hSeek inxd AbsoluteSeek (toInteger k + toInteger offset)
-						liftM (\s -> if string1 == (if caseSensitive then id else map toUpper) (unpack s) then [(path, k + fromIntegral offset)] else []) $ hGet inxd (length string1))
-						(hClose inxd))
-				(\(_ :: IOError) -> return []))
-				next)
-			(return [])
+					(path, k + offset) : next)
+			[]
 			[0..2 ^ 6 - 1])
 			$ compatiblePlaces string1
+
+		-- Inspect files at the stated positions for the string
+		res <- mapM (\(path, positions) -> catch
+			(do
+				path' <- getFile' options path
+				inxd <- openBinaryFile path ReadMode
+				finally (foldr (\pos next -> do
+					hSeek inxd AbsoluteSeek $ toInteger pos
+					s <- hGet inxd (length string1)
+					if string1 == (if caseSensitive options then id else map toUpper) (unpack s) then
+							return [(path, pos)]
+						else
+							next)
+					(return [])
+					positions)
+					(hClose inxd))
+			(\(_ :: IOError) -> return []))
+			positions
 
 		-- Read the overflow file
 		hSeek overflow AbsoluteSeek 0
@@ -178,11 +206,11 @@ lookUp (Index hdl overflow) caseSensitive string = catch
 					return Nothing
 				else do
 					path <- liftM (reverse . dropWhile (=='\0') . reverse . unpack) $ hGet overflow 128
-					inxd <- openBinaryFile path ReadMode
+					path' <- getFile' options path
+					inxd <- openBinaryFile path' ReadMode
 					contents <- hGetContents inxd
-					return $ Just $ case findIndex (isPrefixOf string1) $ tails $ (if caseSensitive then id else map toUpper) contents of
+					return $! Just $! case findIndex (isPrefixOf string1) $ tails $ (if caseSensitive options then id else map toUpper) contents of
 						Just k -> [(path, fromIntegral k)]
 						Nothing -> []
-		return $ concat res2 ++ nub (concat res))
-		(free buf))
-	(\(_ :: IOError) -> throwIO ResourceError)
+		return $ concat $ res2 ++ res)
+		(free buf)
