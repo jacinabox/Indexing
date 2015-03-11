@@ -1,6 +1,6 @@
 {-# LANGUAGE ScopedTypeVariables, CPP #-}
 
-module IndexDirector (indexDatabase, indexWrapper, fullIndex, lookKeywords, parseKeywords) where
+module IndexDirector (indexDatabase, indexWrapper, fullIndex, lookKeywords, getIndex, parseKeywords) where
 
 import Data.List hiding (union, insert)
 import Control.Monad
@@ -18,7 +18,6 @@ import Data.ByteString.Char8 (unpack, hGet)
 import Prelude hiding (catch)
 
 import Replace
-import Split
 import Unpacks
 import Normalize
 import Driveletters
@@ -48,12 +47,16 @@ details2 name code = do
 	userdata <- getAppUserDataDirectory "Indexing"
 	tmp <- getTemporaryDirectory
 	unless
-		(name == userdata || name == tmp || name == "/dev" || name == "/sys")
+		(name == appendDelimiter userdata || name == appendDelimiter tmp || name == "/dev" || name == "/sys")
 		code
+
+details3 code = catch (catch code 
+	(\(ex :: IndexingError) -> putStr "*** " >> print ex))
+	(\(ex :: IOError) -> putStr "*** " >> print ex)
 
 -- When a file is an unpackable archive, I do the unpacking, then start
 -- indexing the resulting temporary directory.
-indexDirectory dir logicalDir idx = do
+indexDirectory dir logicalDir idx = details3 $ do
 	contents <- getDirectoryContents dir
 	mapM_ (\nm -> let
 			name = dir ++ nm
@@ -111,15 +114,15 @@ intersects ls = foldl1 intersection (map (map (\(x, y) -> (x, [y]))) ls)
 -- First it acquires a list, /possibilities/, which is a superset of the correct
 -- results. Then it winnows this list down by searching for the keywords
 -- in the texts of the files.
-lookKeywords keywords caseSensitive = do
+lookKeywords idx keywords options = do
+	keywords <- return $ map normalizeText keywords
+	results <- liftM (nub . intersects) $ mapM (lookUp idx options) keywords
+	mapM (contexts keywords) results
+
+getIndex = do
 	(idxNm, idxNm2) <- indexFileName
 	idx <- openIndex idxNm idxNm2
-	finally
-		(do
-		keywords <- return $ map normalizeText keywords
-		results <- liftM (nub . intersects) $ mapM (lookUp idx caseSensitive) keywords
-		mapM (contexts keywords) results)
-		(closeIndex idx)
+	readIndex idx
 
 -- This function produces the contexts for a search.
 contexts keywords (name, locs) = liftM ((,) name) $ mapM (\(k, loc) -> do

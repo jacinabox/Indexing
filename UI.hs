@@ -19,6 +19,7 @@ import Control.Exception
 import System.IO
 import Foreign.ForeignPtr
 import IndexDirector
+import Indexing (QueryOptions(..), MemoryIndex)
 import Unpacks
 import Split
 #ifdef WIN32
@@ -169,8 +170,8 @@ makeFont weight = catch
 
 quote s = "\"" ++ s ++ "\""
 
-wndProc :: IORef ([(String, [String])], Int32) -> IORef Int -> IORef Int32 -> IORef [String] -> HWND -> UINT -> WPARAM -> LPARAM -> IO Int
-wndProc resultsRef settingsRef scrollRef historyRef wnd msg wParam lParam
+wndProc :: IORef MemoryIndex -> IORef ([(String, [String])], Int32) -> IORef Int -> IORef Int32 -> IORef [String] -> HWND -> UINT -> WPARAM -> LPARAM -> IO Int
+wndProc idxRef resultsRef settingsRef scrollRef historyRef wnd msg wParam lParam
 	-- Handlers for commands involving individual results
 	| msg == wM_COMMAND && loWord wParam == fromIntegral btnId	= do
 		-- Do a hit test on the control's position to determine which folder to open.
@@ -219,14 +220,15 @@ wndProc resultsRef settingsRef scrollRef historyRef wnd msg wParam lParam
 		showWindow btn sW_HIDE
 		drawMessage wnd
 		s <- getWindowText txt
-		let keywords = filter ((>2) . length) (parseKeywords s)
+		let keywords = filter ((>=5) . length) (parseKeywords s)
 		setWindowText wnd (s ++ " - Desktop Search")
 		if null keywords then
 				writeIORef resultsRef ([], 0)
 			else do
 				insertString txt s
 				modifyIORef' historyRef (s:)
-				res <- lookKeywords keywords (res /= 0)
+				idx <- readIORef idxRef
+				res <- lookKeywords idx keywords (QueryOptions (res /= 0) True)
 				writeIORef resultsRef (res, fromIntegral $ length keywords)
 		sortResults settingsRef resultsRef
 		writeIORef scrollRef 0
@@ -337,6 +339,8 @@ wndProc resultsRef settingsRef scrollRef historyRef wnd msg wParam lParam
 	| otherwise		= return 0
 
 winMain = do
+	idx <- getIndex
+	idxRef <- newIORef idx
 	resultsRef <- newIORef ([], 0)
 	settingsRef <- newIORef sort1Id
 	scrollRef <- newIORef 0
@@ -345,7 +349,7 @@ winMain = do
 	let tmp = DialogTemplate 0 0 640 480 (wS_VISIBLE .|. wS_OVERLAPPEDWINDOW .|. wS_CLIPCHILDREN) 0 (Left 0) (Left 0) (Right "Desktop Search") (Left 0) 14
 		[]
 	tmp2 <- mkDialogFromTemplate tmp
-	dialogBoxIndirect inst tmp2 Nothing (wndProc resultsRef settingsRef scrollRef historyRef)
+	dialogBoxIndirect inst tmp2 Nothing (wndProc idxRef resultsRef settingsRef scrollRef historyRef)
 
 	allocaMessage $ \msg ->
 		let loop = do
@@ -356,6 +360,8 @@ winMain = do
 		loop
 #endif
 
+help = putStrLn "Index: usage\nindex -i path, indexes a path\nindex -i, does a full index\nindex keywords [-c -a], does a search (case sensitive, in archives)"
+
 main = do
 	args <- getArgs
 	let keywords = filter ((>=5) . length) args
@@ -365,15 +371,19 @@ main = do
 		else do
 			dir <- canonicalizePath (args !! 1)
 			indexWrapper (appendDelimiter dir)
+	else if "--help" `elem` args then
+		help
 	else if null keywords then
 #ifdef WIN32
 		winMain
 #else
-		putStrLn "Index: no keywords"
+		help
 #endif
 	else do
-		let caseSensitive = "-c" `elem` args
-		results <- lookKeywords keywords caseSensitive
+		let cas = "-c" `elem` args
+		let inArch = "-a" `elem` args
+		idx <- getIndex
+		results <- lookKeywords idx keywords (QueryOptions cas inArch)
 		mapM_ (\(nm, contexts) -> do
 				putStrLn ""
 				putStrLn ("  " ++ nm)
