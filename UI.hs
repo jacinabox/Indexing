@@ -362,9 +362,28 @@ winMain = do
 
 help = putStrLn "Index: usage\nindex -i path, indexes a path\nindex -i, does a full index\nindex keywords [-c -a], does a search (case sensitive, in archives)"
 
+doSearch idx cas inArch args = do
+	let keywords = filter ((>=5) . length) args
+	results <- lookKeywords idx keywords (QueryOptions cas inArch)
+	mapM_ (\(nm, contexts) -> do
+			putStrLn ""
+			putStrLn ("  " ++ nm)
+			mapM_ putStrLn contexts)
+		results
+	when (null results) (putStrLn "Index: no results found")
+
+repl idx cas inArch = do
+	putStr ">"
+	hFlush stdout
+	query <- getLine
+	unless (null query) $ do
+		doSearch idx cas inArch (words query)
+		repl idx cas inArch
+
 main = do
 	args <- getArgs
-	let keywords = filter ((>=5) . length) args
+	let cas = "-c" `elem` args
+	let inArch = "-a" `elem` args
 	if not (null args) && head args == "-i" then
 		if length args == 1 then
 			fullIndex
@@ -373,20 +392,15 @@ main = do
 			indexWrapper (appendDelimiter dir)
 	else if "--help" `elem` args then
 		help
-	else if null keywords then
+	else if null args then
 #ifdef WIN32
 		winMain
 #else
-		help
+		do
+		putStrLn "Loading index"
+		idx <- getIndex
+		repl idx cas inArch
 #endif
 	else do
-		let cas = "-c" `elem` args
-		let inArch = "-a" `elem` args
 		idx <- getIndex
-		results <- lookKeywords idx keywords (QueryOptions cas inArch)
-		mapM_ (\(nm, contexts) -> do
-				putStrLn ""
-				putStrLn ("  " ++ nm)
-				mapM_ putStrLn contexts)
-			results
-		when (null results) (putStrLn "Index: no results found")
+		doSearch idx cas inArch args

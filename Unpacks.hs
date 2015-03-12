@@ -1,6 +1,6 @@
 {-# LANGUAGE CPP, ScopedTypeVariables, MultiParamTypeClasses #-}
 
-module Unpacks (unpacks, pathDelimiter, appendDelimiter, customQuery,{- Rec(Rec),-} database, getTable, record) where
+module Unpacks (nullDevice, getFile, unpacks, pathDelimiter, appendDelimiter, customQuery,{- Rec(Rec),-} database, getTable, record) where
 
 import Data.List
 import Data.Char
@@ -167,20 +167,20 @@ unpacks = [(".htm", convertFile convertHtml),
 	(".zip", unpack "unzip" [])]
 
 -- A file interface for SQL databases, answering to the phony protocol sql://server/user@password/db/table/key.
-connect ident f = mysqlConnect (MySQLOptions svr db usr pwd) f where
+connect ident f = undefined{-mysqlConnect (MySQLOptions svr db usr pwd) f where
 	(svr, rest) = break (==pathDelimiter) (drop 6 ident)
 	(usr, rest1) = break (=='@') (drop 1 rest)
 	(pwd, rest2) = break (==pathDelimiter) (drop 1 rest1)
-	db = takeWhile (/=pathDelimiter) (drop 1 rest2)
+	db = takeWhile (/=pathDelimiter) (drop 1 rest2)-}
 
-customQuery db tab sql = do
+customQuery db tab sql = undefined{-do
 	(col, _):_ <- describe tab
-	query db $ restrict (col .==. literal ("''; " ++ sql)) (table tab)
+	query db $ restrict (col .==. literal ("''; " ++ sql)) (table tab)-}
 
--- primaryKey db tab = customQuery db tab $ "SHOW KEYS FROM `" ++ tab ++ "` WHERE Key_name = 'PRIMARY'"
+{-primaryKey db tab = customQuery db tab $ "SHOW KEYS FROM `" ++ tab ++ "` WHERE Key_name = 'PRIMARY'"
 
 -- | A typeless record type, for use when the record type is not known in advance.
--- newtype Rec t = Rec [(Attribute, Maybe String)] deriving (Read, Show, Eq, Ord)
+newtype Rec t = Rec [(Attribute, Maybe String)] deriving (Read, Show, Eq, Ord)
 
 liftMay m = m >>= maybe mzero return
 
@@ -193,15 +193,15 @@ instance GetRec (Rec t) (Rec t) where
 			`mplus` liftM show (liftMay $ getBool x col)
 			`mplus` liftM show (liftMay $ getCalendarTime x col)
 			`mplus` liftM show (liftMay $ getLocalTime x col))
-		scheme
+		scheme-}
 
-database ident = connect ident tables
+database ident = undefined -- connect ident tables
 
-getTable ident tab = connect ident (\db -> do
+getTable ident tab = undefined{-connect ident (\db -> do
 	primary:_ <- primaryKey db tab
-	query db (table tab))
+	query db (table tab))-}
 
-record ident tab key = connect ident (\db -> do
+record ident tab key = undefined{-connect ident (\db -> do
 	primary:_ <- primaryKey tab
-	query db (restrict (table tab) (primary .==. key)))
+	query db (restrict (table tab) (primary .==. key)))-}
 

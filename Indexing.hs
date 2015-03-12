@@ -1,4 +1,4 @@
-{-# LANGUAGE DeriveDataTypeable, ScopedTypeVariables #-}
+{-# LANGUAGE DeriveDataTypeable, ScopedTypeVariables, ParallelListComp #-}
 
 -- | Monotone hash based index.
 module Indexing (pad, openIndex, closeIndex, Index, IndexingError(..), QueryOptions(..), index, MemoryIndex, readIndex, lookUp) where
@@ -34,7 +34,9 @@ windows sz ls = pad '\0' sz (take sz ls) : if null dr then [] else windows sz dr
 	dr = drop 5 ls
 
 bits :: Array Int [Int]
-bits = listArray (0, 255) $ evalRand (mapM (\_ -> mapM (\_ -> getRandomR (0, 15)) [(), (), ()]) [0..255]) (mkStdGen 0)
+bits = listArray (0, 255) $ evalRand (mapM (\_ -> mapM (\_ -> getRandomR (0, 15)) [(), ()]) [0..255]) (mkStdGen 0)
+
+nBits n = 1 + maximum (filter (testBit n) [31,30..0])
 
 hashByte hash x = if x == '\0' || ord x > 255 then
 		hash
@@ -44,21 +46,32 @@ hashByte hash x = if x == '\0' || ord x > 255 then
 hashWindow :: String -> Int32
 hashWindow = foldl hashByte 0
 
--- Put the bits in x in the 1 positions in mask
-interlace mask x = if x == 0 || mask == 0 then
-		0
-	else if testBit mask 0 then
-		(x .&. 1) .|. shiftL (interlace (shiftR mask 1) (shiftR x 1)) 1
-	else
-		shiftL (interlace (shiftR mask 1) x) 1
+patterns = [
+        [0,4,8],
+        [0,3..9],
+        [0,2..8],
+        [0,1,3,5,6,8,9],
+        [0,1,2,4,5,6,8,9],
+        [0..9]
+        ]
 
-compatiblePlaces1 :: String -> [Int32]
-compatiblePlaces1 window = map ((.|. hash) . interlace bits) [0..2 ^ popCount bits - 1] where
+selects ls = [ (y, xs ++ ys) | xs <- inits ls | y:ys <- tails ls ]
+
+choose _ [] = [[]]
+choose 0 _ = [[]]
+choose n xs = concatMap (\(x, ls) -> map (x:) (choose (n - 1) ls)) (selects xs)
+
+compatiblePlaces1 :: Int -> String -> [Int32]
+compatiblePlaces1 code window = map (foldl setBit hash) $ choose (length $ patterns !! code) bits where
 	hash = hashWindow window
-	bits = xor hash 65535
+	bits = filter (not . testBit hash) [0..15]
 
-compatiblePlaces :: String -> [(Int32, Int32)]
-compatiblePlaces window = concat $ zipWith (\n -> map ((,) n) . compatiblePlaces1 . take 10 . (++window)) [4,3..0] (tails (replicate 4 '\0'))
+compatiblePlaces :: Int -> String -> [(Int32, Int32)]
+compatiblePlaces sizeCode window = concatMap (\code -> concat $ zipWith (\n pad ->
+	map ((,) n) $ compatiblePlaces1 code $ map ((pad ++ window) !!) $ filter (<fromIntegral n+5) $ patterns !! code)
+	[4,3..0]
+	(tails (replicate 4 '\0')))
+	[0..sizeCode]
 
 superblockSize :: Int32
 superblockSize = 2 ^ 20 * 32
@@ -103,6 +116,9 @@ interesting = any (`notElem` "\t\n\r ")
 
 data MemoryIndex = MemoryIndex !Index !(UArray (Int32, Int32) Int32) !(Array Int32 ByteString)
 
+sizeToCode :: Integer -> Int
+sizeToCode = min 5 . max 0 . subtract 5 . nBits . (`quot` 128) . subtract superblockSize . fromInteger
+
 readIndex idx@(Index hdl _) = do
 	sz <- hFileSize hdl
 	hSeek hdl AbsoluteSeek 0
@@ -125,6 +141,8 @@ index (Index idx overflow) path contents = do
 	hSeek idx SeekFromEnd 0
 	pathI <- liftM ((`quot` 128) . subtract superblockSize . fromInteger) (hTell idx)
 	hPutStr idx (pad '\0' 128 path)
+
+	sz <- hFileSize idx
 
 	-- Index the file
 	foldr (\(i, window) next1 -> when (interesting window) $ do
@@ -150,7 +168,7 @@ index (Index idx overflow) path contents = do
 			(do
 			hSeek overflow SeekFromEnd 0
 			hPutStr overflow (pad '\0' 128 path))
-			$ compatiblePlaces1 window)
+			$ compatiblePlaces1 (sizeToCode sz) window)
 		(return ())
 		$ zip [0,5..] (windows 10 $ map toUpper $ takeWhile printable contents)
 
@@ -162,6 +180,7 @@ getFile' options path = if inArchives options || '@' `notElem` path then
 lookUp :: MemoryIndex -> QueryOptions -> String -> IO [(FilePath, Int32)]
 lookUp (MemoryIndex (Index hdl overflow) superblock remainder) options string = do
 	let string1 = (if caseSensitive options then id else map toUpper) string
+	sz <- hFileSize hdl
 	buf <- mallocBytes 128
 	finally
 		-- Get positions for the string
@@ -178,7 +197,7 @@ lookUp (MemoryIndex (Index hdl overflow) superblock remainder) options string = 
 					(path, k + offset) : next)
 			[]
 			[0..2 ^ 6 - 1])
-			$ compatiblePlaces string1
+			$ compatiblePlaces (sizeToCode sz) string1
 
 		-- Inspect files at the stated positions for the string
 		res <- mapM (\(path, positions) -> catch
