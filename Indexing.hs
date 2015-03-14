@@ -1,4 +1,4 @@
-{-# LANGUAGE DeriveDataTypeable, ScopedTypeVariables, ParallelListComp #-}
+{-# LANGUAGE DeriveDataTypeable, ScopedTypeVariables #-}
 
 -- | Monotone hash based index.
 module Indexing (pad, openIndex, closeIndex, Index, IndexingError(..), QueryOptions(..), index, MemoryIndex, readIndex, lookUp) where
@@ -26,6 +26,8 @@ import Prelude hiding (catch)
 
 import Unpacks
 
+import System.IO.Unsafe
+
 pad _ 0 ls = ls
 pad with n [] = replicate n with
 pad with n (x:xs) = x : pad with (n - 1) xs
@@ -38,40 +40,30 @@ bits = listArray (0, 255) $ evalRand (mapM (\_ -> mapM (\_ -> getRandomR (0, 15)
 
 nBits n = 1 + maximum (filter (testBit n) [31,30..0])
 
-hashByte hash x = if x == '\0' || ord x > 255 then
+hashByte nBits hash x = if x == '\0' || ord x > 255 then
 		hash
 	else
-		foldl setBit hash (bits ! ord x)
+		foldl setBit hash $ take nBits $ bits ! ord x
 
-hashWindow :: String -> Int32
-hashWindow = foldl hashByte 0
-
-patterns = [
-        [0,4,8],
-        [0,3..9],
-        [0,2..8],
-        [0,1,3,5,6,8,9],
-        [0,1,2,4,5,6,8,9],
-        [0..9]
-        ]
-
-selects ls = [ (y, xs ++ ys) | xs <- inits ls | y:ys <- tails ls ]
+hashWindow :: Int -> String -> Int32
+hashWindow bits s = foldl (hashByte n) (foldl (hashByte (n + 1)) 0 tk) dr where
+	(n, r) = quotRem bits 10
+	(tk, dr) = splitAt r s
 
 choose _ [] = [[]]
 choose 0 _ = [[]]
-choose n xs = concatMap (\(x, ls) -> map (x:) (choose (n - 1) ls)) (selects xs)
+choose n xs = concatMap (\(x:xs) -> map (x:) (choose (n - 1) xs)) (take (length xs - n) (tails xs))
 
 compatiblePlaces1 :: Int -> String -> [Int32]
-compatiblePlaces1 code window = map (foldl setBit hash) $ choose (length $ patterns !! code) bits where
-	hash = hashWindow window
+compatiblePlaces1 nBits window = [ foldl setBit hash comb | n <- [0..((nBits - popCount hash) `max` 0) `min` length bits], comb <- choose n bits ] where
+	hash = hashWindow nBits window
 	bits = filter (not . testBit hash) [0..15]
 
 compatiblePlaces :: Int -> String -> [(Int32, Int32)]
-compatiblePlaces sizeCode window = concatMap (\code -> concat $ zipWith (\n pad ->
-	map ((,) n) $ compatiblePlaces1 code $ map ((pad ++ window) !!) $ filter (<fromIntegral n+5) $ patterns !! code)
+compatiblePlaces sizeCode window = concatMap (\code -> concat $ zipWith (\n -> map ((,) (fromIntegral n)) . compatiblePlaces1 code . take n . (++window))
 	[4,3..0]
-	(tails (replicate 4 '\0')))
-	[0..sizeCode]
+	(tails $ replicate 4 '\0'))
+	[5..sizeCode]
 
 superblockSize :: Int32
 superblockSize = 2 ^ 20 * 32
@@ -94,19 +86,14 @@ instance Exception IndexingError
 
 data QueryOptions = QueryOptions { caseSensitive :: !Bool, inArchives :: !Bool }
 
+{-# NOINLINE buffer #-}
+buffer = unsafePerformIO (new 0)
+
 hGetInt32 :: Handle -> IO Int32
-hGetInt32 hdl = do
-	p <- new 0
-	finally
-		(do { hGetBuf hdl p 4; peek p })
-		(free p)
+hGetInt32 hdl = do { hGetBuf hdl buffer 4; peek buffer }
 
 hPutInt32 :: Handle -> Int32 -> IO ()
-hPutInt32 hdl x = do
-	p <- new 0
-	finally
-		(do { poke p x; hPutBuf hdl p 4 })
-		(free p)
+hPutInt32 hdl x = do { poke buffer x; hPutBuf hdl buffer 4 }
 
 seekForWindow idx i j = hSeek idx AbsoluteSeek $ toInteger $ 2 ^ 9 * i + 8 * j
 
@@ -116,8 +103,8 @@ interesting = any (`notElem` "\t\n\r ")
 
 data MemoryIndex = MemoryIndex !Index !(UArray (Int32, Int32) Int32) !(Array Int32 ByteString)
 
-sizeToCode :: Integer -> Int
-sizeToCode = min 5 . max 0 . subtract 5 . nBits . (`quot` 128) . subtract superblockSize . fromInteger
+sizeToBits :: Integer -> Int
+sizeToBits = max 0 . (20 -) . nBits . (`quot` 128) . subtract superblockSize . fromInteger
 
 readIndex idx@(Index hdl _) = do
 	sz <- hFileSize hdl
@@ -145,7 +132,7 @@ index (Index idx overflow) path contents = do
 	sz <- hFileSize idx
 
 	-- Index the file
-	foldr (\(i, window) next1 -> when (interesting window) $ do
+	foldr (\(i, window) next1 -> when (interesting window) $
 		-- Search for a place
 		foldr (\k next -> do
 			-- Seek to the point in the file where the window should go
@@ -166,9 +153,10 @@ index (Index idx overflow) path contents = do
 				next
 				[0..2 ^ 6 - 1])
 			(do
+			putStrLn "(Overflow)"
 			hSeek overflow SeekFromEnd 0
-			hPutStr overflow (pad '\0' 128 path))
-			$ compatiblePlaces1 (sizeToCode sz) window)
+			hPutStr overflow $ pad '\0' 128 path)
+			$ compatiblePlaces1 (sizeToBits sz) window)
 		(return ())
 		$ zip [0,5..] (windows 10 $ map toUpper $ takeWhile printable contents)
 
@@ -197,7 +185,7 @@ lookUp (MemoryIndex (Index hdl overflow) superblock remainder) options string = 
 					(path, k + offset) : next)
 			[]
 			[0..2 ^ 6 - 1])
-			$ compatiblePlaces (sizeToCode sz) string1
+			$ compatiblePlaces (sizeToBits sz) string1
 
 		-- Inspect files at the stated positions for the string
 		res <- mapM (\(path, positions) -> catch
