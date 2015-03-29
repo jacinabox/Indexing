@@ -52,15 +52,15 @@ hashWindow bits s = foldl (hashByte n) (foldl (hashByte (n + 1)) 0 tk) dr where
 
 choose _ [] = [[]]
 choose 0 _ = [[]]
-choose n xs = concatMap (\(x:xs) -> map (x:) (choose (n - 1) xs)) (take (length xs - n) (tails xs))
+choose n xs = concatMap (\(x:xs) -> map (x:) (choose (n - 1) xs)) (take (length xs - n + 1) (tails xs))
 
 compatiblePlaces1 :: Int -> String -> [Int32]
-compatiblePlaces1 nBits window = [ foldl setBit hash comb | n <- [0..((nBits - popCount hash) `max` 0) `min` length bits], comb <- choose n bits ] where
+compatiblePlaces1 nBits window = map (foldl setBit hash) $ choose (((nBits - popCount hash) `min` length bits) `max` 0) bits where
 	hash = hashWindow nBits window
 	bits = filter (not . testBit hash) [0..15]
 
 compatiblePlaces :: Int -> String -> [(Int32, Int32)]
-compatiblePlaces sizeCode window = concatMap (\code -> concat $ zipWith (\n -> map ((,) (fromIntegral n)) . compatiblePlaces1 code . take n . (++window))
+compatiblePlaces sizeCode window = concatMap (\code -> concat $ zipWith (\n -> map ((,) (fromIntegral n)) . compatiblePlaces1 code . take 10 . (++window))
 	[4,3..0]
 	(tails $ replicate 4 '\0'))
 	[5..sizeCode]
