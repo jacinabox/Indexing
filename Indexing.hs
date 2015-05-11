@@ -46,9 +46,7 @@ hashByte nBits hash x = if x == '\0' || ord x > 255 then
 		foldl setBit hash $ take nBits $ bits ! ord x
 
 hashWindow :: Int -> String -> Int32
-hashWindow bits s = foldl (hashByte n) (foldl (hashByte (n + 1)) 0 tk) dr where
-	(n, r) = quotRem bits 10
-	(tk, dr) = splitAt r s
+hashWindow bits = foldl (hashByte bits) 0
 
 choose _ [] = [[]]
 choose 0 _ = [[]]
@@ -104,7 +102,7 @@ interesting = any (`notElem` "\t\n\r ")
 data MemoryIndex = MemoryIndex !Index !(UArray (Int32, Int32) Int32) !(Array Int32 ByteString)
 
 sizeToBits :: Integer -> Int
-sizeToBits = max 0 . (20 -) . nBits . (`quot` 128) . subtract superblockSize . fromInteger
+sizeToBits = min 32 . (+10) . nBits . (`quot` 128) . subtract superblockSize . fromInteger
 
 readIndex idx@(Index hdl _) = do
 	sz <- hFileSize hdl
@@ -153,7 +151,6 @@ index (Index idx overflow) path contents = do
 				next
 				[0..2 ^ 6 - 1])
 			(do
-			putStrLn "(Overflow)"
 			hSeek overflow SeekFromEnd 0
 			hPutStr overflow $ pad '\0' 128 path)
 			$ compatiblePlaces1 (sizeToBits sz) window)
