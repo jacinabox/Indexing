@@ -38,30 +38,30 @@ windows sz ls = pad '\0' sz (take sz ls) : if null dr then [] else windows sz dr
 bits :: Array Int [Int]
 bits = listArray (0, 255) $ evalRand (mapM (\_ -> mapM (\_ -> getRandomR (0, 15)) [(), ()]) [0..255]) (mkStdGen 0)
 
-nBits n = 1 + maximum (filter (testBit n) [31,30..0])
-
-hashByte nBits hash x = if x == '\0' || ord x > 255 then
+hashByte f hash x = if x == '\0' || ord x > 255 then
 		hash
 	else
-		foldl setBit hash $ take nBits $ bits ! ord x
+		foldl f hash $ take 4 $ bits ! ord x
 
-hashWindow :: Int -> String -> Int32
-hashWindow bits = foldl (hashByte bits) 0
+hashWindow :: Int32 -> Int32 -> String -> Int32
+hashWindow brk init = foldl (hashByte clearBit) (foldl (hashByte init setBit) tk) dr where
+	(tk, dr) = splitAt brk bits
 
 choose _ [] = [[]]
 choose 0 _ = [[]]
 choose n xs = concatMap (\(x:xs) -> map (x:) (choose (n - 1) xs)) (take (length xs - n + 1) (tails xs))
 
-compatiblePlaces1 :: Int -> String -> [Int32]
-compatiblePlaces1 nBits window = map (foldl setBit hash) $ choose (((nBits - popCount hash) `min` length bits) `max` 0) bits where
-	hash = hashWindow nBits window
-	bits = filter (not . testBit hash) [0..15]
+compatiblePlaces1 :: Int32 -> String -> [Int32]
+compatiblePlaces1 brk window = map (foldl setBit hash) $ choose (((nBits - popCount hash) `min` length bits) `max` 0) bits where
+	hash1 = hashWindow brk maxBound window
+	hash2 = hashWindow brk 0 window
+	hash = hash1 .&. complement hash2
+	bits = filter (testBit hash) [0..15]
 
-compatiblePlaces :: Int -> String -> [(Int32, Int32)]
-compatiblePlaces sizeCode window = concatMap (\code -> concat $ zipWith (\n -> map ((,) (fromIntegral n)) . compatiblePlaces1 code . take 10 . (++window))
+compatiblePlaces :: String -> [(Int32, Int32)]
+compatiblePlaces window = concat $ zipWith (\n -> map ((,) (fromIntegral n)) . compatiblePlaces1 code . take 10 . (++window))
 	[4,3..0]
-	(tails $ replicate 4 '\0'))
-	[5..sizeCode]
+	(tails $ replicate 4 '\0')
 
 superblockSize :: Int32
 superblockSize = 2 ^ 20 * 32
@@ -101,9 +101,6 @@ interesting = any (`notElem` "\t\n\r ")
 
 data MemoryIndex = MemoryIndex !Index !(UArray (Int32, Int32) Int32) !(Array Int32 ByteString)
 
-sizeToBits :: Integer -> Int
-sizeToBits = min 32 . (+10) . nBits . (`quot` 128) . subtract superblockSize . fromInteger
-
 readIndex idx@(Index hdl _) = do
 	sz <- hFileSize hdl
 	hSeek hdl AbsoluteSeek 0
@@ -129,8 +126,7 @@ index (Index idx overflow) path contents = do
 
 	sz <- hFileSize idx
 
-	-- Index the file
-	foldr (\(i, window) next1 -> when (interesting window) $
+	let putWindow i window pathI next1 = 
 		-- Search for a place
 		foldr (\k next -> do
 			-- Seek to the point in the file where the window should go
@@ -154,6 +150,11 @@ index (Index idx overflow) path contents = do
 			hSeek overflow SeekFromEnd 0
 			hPutStr overflow $ pad '\0' 128 path)
 			$ compatiblePlaces1 (sizeToBits sz) window)
+
+	-- Index the file
+	foldr (\(i, window) next1 -> when (interesting window) $ do
+		putWindow i window pathI
+		putWindow )
 		(return ())
 		$ zip [0,5..] (windows 10 $ map toUpper $ takeWhile printable contents)
 
