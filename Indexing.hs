@@ -33,7 +33,7 @@ pad with n [] = replicate n with
 pad with n (x:xs) = x : pad with (n - 1) xs
 
 windows sz ls = pad '\0' sz (take sz ls) : if null dr then [] else windows sz dr where
-	dr = drop 5 ls
+	dr = drop sz ls
 
 bits :: Array Int [Int]
 bits = listArray (0, 255) $ evalRand (mapM (\_ -> mapM (\_ -> getRandomR (0, 15)) [(), ()]) [0..255]) (mkStdGen 0)
@@ -101,9 +101,6 @@ interesting = any (`notElem` "\t\n\r ")
 
 data MemoryIndex = MemoryIndex !Index !(UArray (Int32, Int32) Int32) !(Array Int32 ByteString)
 
-sizeToBits :: Integer -> Int
-sizeToBits = min 32 . (+10) . nBits . (`quot` 128) . subtract superblockSize . fromInteger
-
 readIndex idx@(Index hdl _) = do
 	sz <- hFileSize hdl
 	hSeek hdl AbsoluteSeek 0
@@ -116,6 +113,8 @@ readIndex idx@(Index hdl _) = do
 				liftM2 (:) (hGet hdl 128) next
 	return $! MemoryIndex idx (listArray rng ls) (listArray (0, (fromInteger sz - superblockSize) `quot` 128) ls2) where
 	rng = ((0, 0), (2 ^ 16 - 1, 2 ^ 7 - 1))
+
+packInt [x1,x2,x3,x4] = shiftL x1 24 .|. shiftL x2 16 .|. shiftL x3 8 .|. x4
 
 index :: Index -> FilePath -> String -> IO ()
 index (Index idx overflow) path contents = do
@@ -130,8 +129,8 @@ index (Index idx overflow) path contents = do
 	sz <- hFileSize idx
 
 	-- Index the file
-	foldr (\(i, window) next1 -> when (interesting window) $
-		-- Search for a place
+	foldr (\(i, window) next1 -> when (interesting window) $ do
+		-- Search for a place to index the document
 		foldr (\k next -> do
 			-- Seek to the point in the file where the window should go
 			seekForWindow idx k 0
@@ -143,6 +142,8 @@ index (Index idx overflow) path contents = do
 						hSeek idx RelativeSeek (-8)
 						hPutInt32 idx pathI
 						hPutInt32 idx i
+						hSeek idx SeekFromEnd 0
+						hPutStr idx $ pad '\0' 128 path
 						next1
 					else if pathI1 == pathI && j == i then -- Prevent duplicates
 						next1
@@ -153,9 +154,30 @@ index (Index idx overflow) path contents = do
 			(do
 			hSeek overflow SeekFromEnd 0
 			hPutStr overflow $ pad '\0' 128 path)
-			$ compatiblePlaces1 (sizeToBits sz) window)
+			$ compatiblePlaces1 (sizeToBits sz) window
+
+		-- Search for a place to index the word sequence
+		let (tk, x1:x2:rest) = splitAt 4 window
+		let n = packInt tk
+		let entry1 = packInt [-1,0,fromIntegral (ord x1),fromIntegral (ord x2)]
+		let entry2 = packInt $ map (fromIntegral . ord) rest
+		seekForWindow idx n 0
+		foldr (\_ next0 -> do
+			i1 <- hGetInt32 idx
+			i2 <- hGetInt32 idx
+			if i1 == 0 then do
+					hSeek idx RelativeSeek (-8)
+					hPutInt32 idx entry1
+					hPutInt32 idx entry2
+					next1
+				else if i1 == entry1 && i2 == entry2 then
+					next1
+				else
+					next0)
+			(return ())
+			[0..2 ^ 6 - 1])
 		(return ())
-		$ zip [0,5..] (windows 10 $ map toUpper $ takeWhile printable contents)
+		$ zip [0,10..] (windows 10 $ map toUpper $ takeWhile printable contents)
 
 getFile' options path = if inArchives options || '@' `notElem` path then
 		getFile path
