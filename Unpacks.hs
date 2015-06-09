@@ -154,8 +154,8 @@ type Identifier = String
 
 -- A table of conversion functions, that take their filenames
 -- as strings and unpack them into temporary directories.
-unpacks = [(".htm", convertFile convertHtml),
-	(".html", convertFile convertHtml),
+unpacks = [-- (".htm", convertFile convertHtml),
+	-- (".html", convertFile convertHtml),
 	(".docx", convertFile convertHtml),
 	(".docm", convertFile convertHtml),
 	(".xlsx", convertFile convertHtml),

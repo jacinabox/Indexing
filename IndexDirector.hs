@@ -116,7 +116,7 @@ intersects ls = foldl1 intersection (map (map (\(x, y) -> (x, [y]))) ls)
 -- in the texts of the files.
 lookKeywords idx keywords options = do
 	keywords <- return $ map normalizeText keywords
-	results <- liftM (nub . intersects) $ mapM (lookUp idx options) keywords
+	results <- liftM intersects $ mapM (lookUp idx options) keywords
 	mapM (contexts keywords) results
 
 getIndex = do
