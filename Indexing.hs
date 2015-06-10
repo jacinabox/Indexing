@@ -1,4 +1,4 @@
-{-# LANGUAGE DeriveDataTypeable, ScopedTypeVariables #-}
+{-# LANGUAGE DeriveDataTypeable, ScopedTypeVariables, CPP #-}
 
 -- | Monotone hash based index.
 module Indexing (pad, openIndex, closeIndex, Index, IndexingError(..), QueryOptions(..), index, MemoryIndex, readIndex, lookUp) where
@@ -100,11 +100,12 @@ printable x = ord x >= 32 && ord x <= 255 || ord x == 10 || ord x == 13
 
 interesting = any (`notElem` "\t\n\r ")
 
-data MemoryIndex = MemoryIndex !Index !(UArray Int32 Int32) !(Array Int32 ByteString)
+data MemoryIndex = MemoryIndex !Index (UArray Int32 Int32) (Array Int32 ByteString)
 
 readIndex idx@(Index hdl _) = do
 	setNumCapabilities 8
 
+#ifdef RESIDENT
 	sz <- hFileSize hdl
 	hSeek hdl AbsoluteSeek 0
 	ls <- mapM (\_ -> hGetInt32 hdl) [0..2 ^ 23 - 1]
@@ -115,6 +116,9 @@ readIndex idx@(Index hdl _) = do
 			else
 				liftM2 (:) (hGet hdl 128) next
 	return $! MemoryIndex idx (listArray (0, superblockSize `quot` 4 - 1) ls) (listArray (0, (fromInteger sz - superblockSize) `quot` 128) ls2)
+#else
+	return $! MemoryIndex idx (error "readIndex: RESIDENT unset") (error "readIndex: RESIDENT unset")
+#endif
 
 packInt :: [Int32] -> Int32
 packInt [x1,x2,x3,x4] = shiftL x1 24 .|. shiftL x2 16 .|. shiftL x3 8 .|. x4
@@ -199,22 +203,27 @@ getFile' options path = if inArchives options || '@' `notElem` path then
 	else
 		return nullDevice
 
-getExtensions superblock string1 = if length string1 >= 10 then
-		[string1]
+getExtensions idx@(MemoryIndex (Index hdl _) superblock _) string1 = if length string1 >= 10 then
+		return [string1]
 	else
-		filter (string1 `isPrefixOf`) $ foldr (\j next ->
-			let
-				i1 = superblock ! (i * 2 ^ 7 + 2 * j)
-				i2 = superblock ! (i * 2 ^ 7 + 2 * j + 1) in
+		liftM (filter (string1 `isPrefixOf`)) $ foldr (\j next -> do
+#ifdef RESIDENT
+			let i1 = superblock ! (i * 2 ^ 7 + 2 * j)
+			let i2 = superblock ! (i * 2 ^ 7 + 2 * j + 1)
+#else
+			seekForWindow hdl i j
+			i1 <- hGetInt32 hdl
+			i2 <- hGetInt32 hdl
+#endif
 			if i1 == 0 then
-				[]
-			else if i1 > 0 then
+				return []
+				else if i1 > 0 then
 				next
-			else let
+				else let
 				[_, _, x1, x2] = unpackInt i1
 				xs = unpackInt i2 in
-				(tk ++ map (chr . fromIntegral) (x1 : x2 : xs)) : next)
-		[]
+				liftM ((tk ++ map (chr . fromIntegral) (x1 : x2 : xs)) :) next)
+		(return [])
 		[0..2 ^ 10 - 1] where
 	tk = take 4 string1
 	i = packInt1 (map (fromIntegral . ord) tk) `mod` 65536
@@ -224,24 +233,37 @@ bigZip ls = if any null ls then [] else map head ls : bigZip (map tail ls)
 parConcat :: [[t]] -> [t]
 parConcat ls = concat $ concat (bigZip (map (windows0 65536 65536) ls) `using` parList (evalList rseq))
 
-prnt x = unsafePerformIO (putStr x >> putStr ";") `seq` x
+prnt x = unsafePerformIO (putStrLn x) `seq` x
 
-lookUp0 :: MemoryIndex -> Int32 -> String -> [(FilePath, Int32)]
-lookUp0 (MemoryIndex _ superblock remainder) offset =
+lookUp0 :: MemoryIndex -> Int32 -> String -> IO [(FilePath, Int32)]
+lookUp0 (MemoryIndex (Index hdl _) superblock remainder) offset =
 	-- Get positions for the string
-	concatMap (\i ->
-		foldr (\j next ->
-		let
-			pathI = superblock ! (fromIntegral i * 2 ^ 7 + 2 * j)
-			k = superblock ! (fromIntegral i * 2 ^ 7 + 2 * j + 1)
-			path = reverse $ dropWhile (=='\0') $ reverse $ unpack $ remainder ! pathI in
-		if pathI <= 0 then
-				[]
-			else
-				(path, k + offset) : next)
-		[]
-		[0..2 ^ 6 - 1])
+	lazyMapM concat
+		(\i ->
+		foldr (\j next -> do
+#ifdef RESIDENT
+			let pathI = superblock ! (fromIntegral i * 2 ^ 7 + 2 * j)
+			let k = superblock ! (fromIntegral i * 2 ^ 7 + 2 * j + 1)
+			let path0 = remainder ! pathI
+			if pathI <= 0 then
+					return []
+				else
+#else
+			seekForWindow hdl (fromIntegral i) j
+			pathI <- hGetInt32 hdl
+			if pathI <= 0 then
+					return []
+				else do
+					k <- hGetInt32 hdl
+					hSeek hdl AbsoluteSeek (fromIntegral $ superblockSize + pathI * 128)
+					path0 <- hGet hdl 128
+#endif
+					let path = reverse $ dropWhile (=='\0') $ reverse $ unpack path0
+					liftM ((path, k + offset) :) next)
+			(return [])
+			[0..2 ^ 6 - 1])
 		. compatiblePlaces
+		. prnt
 
 lookUp mem@(MemoryIndex (Index hdl overflow) superblock _) options string = do
 	let string1 = (if caseSensitive options then id else map toUpper) string
@@ -250,11 +272,15 @@ lookUp mem@(MemoryIndex (Index hdl overflow) superblock _) options string = do
 	finally
 		(do
 		-- Get extensions of the search string
-		let strings0 = getExtensions superblock (map toUpper string)
-		let strings1 = map ((,) 0) strings0 ++ map ((,) (-5)) (concatMap (getExtensions superblock . drop 5) strings0)
-		let positions = parConcat $ map (\n -> concatMap (uncurry (lookUp0 mem))
-			$ nub
-			$ map (\(m, s) -> (fromIntegral $ n + m, take 10 $ replicate n '\0' ++ s)) strings1) [0..4]
+		strings0 <- getExtensions mem (map toUpper string)
+		strings1 <- liftM ((map ((,) 0) strings0 ++) . map ((,) (-5)) . concat) $ mapM
+			(getExtensions mem . drop 5)
+			strings0
+		positions <- liftM (concat . concat) $ mapM
+			(\n -> mapM (uncurry (lookUp0 mem))
+				$ nub
+				$ map (\(m, s) -> (fromIntegral $ n + m, take 10 $ replicate n '\0' ++ s)) strings1)
+			[0..4]
 
 		-- Inspect files at the stated positions for the string
 		res <- lazyMapM

@@ -10,12 +10,13 @@ import Control.Parallel.Strategies
 lazySequence f ls = do
 	ref <- newIORef undefined
 	x <- foldr (\m m2 -> do
-			pos <- unsafeInterleaveIO $ liftM2 (:) m m2
+			pos <- liftM2 (:) m (unsafeInterleaveIO m2)
 			writeIORef ref pos
 			return pos)
 		(return [])
 		ls
-	y <- return $! f x
+	let y = f x `using` evalList rseq
+	evaluate y
 	pos <- readIORef ref
 	evaluate (pos `using` evalList rseq)
 	return y
