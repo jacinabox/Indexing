@@ -34,11 +34,12 @@ appendDelimiter s
 	| last s `elem` "\\/"	= s
 	| otherwise		= s ++ [pathDelimiter]
 
-convertHtml0 ('<':xs) = convertHtml0 $ tail $ snd $ break (=='>') xs
-convertHtml0 ('&':'#':xs) = chr (read num) : convertHtml0 (tail rest)
+convertHtml0 prev ('<':xs) = maybe "" reverse prev ++ convertHtml0 Nothing xs
+convertHtml0 _ ('>':xs) = convertHtml0 (Just "") xs
+convertHtml0 prev ('&':'#':xs) = convertHtml0 (fmap (chr (read num):) prev) (tail rest)
 	where (num, rest) = span isDigit xs
-convertHtml0 (x:xs) = x : convertHtml0 xs
-convertHtml0 [] = []
+convertHtml0 prev (x:xs) = convertHtml0 (fmap (x:) prev) xs
+convertHtml0 prev [] = maybe "" reverse prev
 
 conversionTable = [("&nbsp;", ' '),
 	("&lt;", '<'),
@@ -103,7 +104,7 @@ conversionTable = [("&nbsp;", ' '),
 	("&uuml;", chr 252),
 	("&yacute;", chr 253)]
 
-convertHtml = replace (map (\(repl, with) -> (repl, [with])) conversionTable) . convertHtml0
+convertHtml = replace (map (\(repl, with) -> (repl, [with])) conversionTable) . convertHtml0 (Just "")
 
 convertRtf0 count ('\\':'{':xs) = '{' : convertRtf0 count xs
 convertRtf0 count ('\\':'}':xs) = '}' : convertRtf0 count xs
@@ -154,8 +155,8 @@ type Identifier = String
 
 -- A table of conversion functions, that take their filenames
 -- as strings and unpack them into temporary directories.
-unpacks = [-- (".htm", convertFile convertHtml),
-	-- (".html", convertFile convertHtml),
+unpacks = [(".htm", convertFile convertHtml),
+	(".html", convertFile convertHtml),
 	(".docx", convertFile convertHtml),
 	(".docm", convertFile convertHtml),
 	(".xlsx", convertFile convertHtml),

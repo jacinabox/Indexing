@@ -125,12 +125,12 @@ getIndex = do
 	readIndex idx
 
 -- This function produces the contexts for a search.
-contexts keywords (name, locs) = liftM ((,) name) $ mapM (\(k, loc) -> do
-	hdl <- openBinaryFile name ReadMode
+contexts keywords (name, locs) = liftM ((,) name) $ mapM (\(k, (unpackName, loc)) -> do
+	hdl <- openBinaryFile unpackName ReadMode
 	sz <- hFileSize hdl
 	hSeek hdl AbsoluteSeek $ toInteger $ (loc - 33) `max` 0
 	bs <- hGet hdl $ 67 `min` (fromInteger sz - (fromIntegral loc - 33))
-	return $ "..." ++ replace [("\n", " "), ("\t", " "), ("\r", " ")] (unpack bs) ++ "...")
+	return $ "..." ++ replace [("\n", " "), ("\t", " "), ("\r", " ")] (unpack bs ++ "..."))
 	$ zip keywords locs
 
 parseKeywords (c:cs)
