@@ -1,6 +1,6 @@
 {-# LANGUAGE ScopedTypeVariables, CPP #-}
 
-module IndexDirector (indexDatabase, indexWrapper, fullIndex, lookKeywords, getIndex, parseKeywords) where
+module IndexDirector (indexFileName, indexDatabase, indexWrapper, fullIndex, lookKeywords, parseKeywords) where
 
 import Data.List hiding (union, insert)
 import Control.Monad
@@ -28,7 +28,7 @@ toUpperCase s = map toUpper s
 indexFileName = do
 	dir <- getAppUserDataDirectory "Indexing"
 	createDirectoryIfMissing False dir
-	return (dir ++ pathDelimiter : "Index.dat", dir ++ pathDelimiter : "Overflow.dat")
+	return (dir ++ pathDelimiter : "Index.dat")
 
 -- I maintain a distinction between "names" and "logical names," in order
 -- to handle files that have been unpacked from archives. The logical names
@@ -73,7 +73,7 @@ indexDirectory dir logicalDir idx = details3 $ do
 				details2 name {-Primary control flow:-}(indexDirectory (name ++ [pathDelimiter]) (logicalName ++ [pathDelimiter]) idx))
 		contents
 
-indexDatabase ident idx = undefined{-do
+indexDatabase ident idx = error ""{-do
 	tables <- database ident
 	mapM_ (\tab -> do
 		recs <- getTable ident tab
@@ -84,8 +84,8 @@ indexDatabase ident idx = undefined{-do
 		tables-}
 
 indexWrapper dir = do
-	(idxNm, idxNm2) <- indexFileName
-	idx <- openIndex idxNm idxNm2
+	idxNm <- indexFileName
+	idx <- openIndex idxNm
 	finally
 		(indexDirectory dir dir idx)
 		(closeIndex idx)
@@ -118,11 +118,6 @@ lookKeywords idx keywords options = do
 	keywords <- return $ map normalizeText keywords
 	results <- liftM intersects $ mapM (lookUp idx options) keywords
 	mapM (contexts keywords) results
-
-getIndex = do
-	(idxNm, idxNm2) <- indexFileName
-	idx <- openIndex idxNm idxNm2
-	readIndex idx
 
 -- This function produces the contexts for a search.
 contexts keywords (name, locs) = liftM ((,) name) $ mapM (\(k, (unpackName, loc)) -> do

@@ -19,13 +19,15 @@ import Control.Exception
 import System.IO
 import Foreign.ForeignPtr
 import IndexDirector
-import Indexing (QueryOptions(..), MemoryIndex)
+import Indexing (openIndex, Index, QueryOptions(..))
 import Unpacks
 import Split
 #ifdef WIN32
 import Subclass
 import Graphics.Win32
 import System.Win32.DLL
+import File.Mapped
+import File.Graph
 
 foreign import stdcall "windows.h GetWindowTextW" c_GetWindowText :: HWND -> LPTSTR -> Int32 -> IO LRESULT
 
@@ -170,7 +172,7 @@ makeFont weight = catch
 
 quote s = "\"" ++ s ++ "\""
 
-wndProc :: IORef MemoryIndex -> IORef ([(String, [String])], Int32) -> IORef Int -> IORef Int32 -> IORef [String] -> HWND -> UINT -> WPARAM -> LPARAM -> IO Int
+wndProc :: IORef Index -> IORef ([(String, [String])], Int32) -> IORef Int -> IORef Int32 -> IORef [String] -> HWND -> UINT -> WPARAM -> LPARAM -> IO Int
 wndProc idxRef resultsRef settingsRef scrollRef historyRef wnd msg wParam lParam
 	-- Handlers for commands involving individual results
 	| msg == wM_COMMAND && loWord wParam == fromIntegral btnId	= do
@@ -339,7 +341,8 @@ wndProc idxRef resultsRef settingsRef scrollRef historyRef wnd msg wParam lParam
 	| otherwise		= return 0
 
 winMain = do
-	idx <- getIndex
+	name <- indexFileName
+	idx <- openIndex name
 	idxRef <- newIORef idx
 	resultsRef <- newIORef ([], 0)
 	settingsRef <- newIORef sort1Id
@@ -398,9 +401,11 @@ main = do
 #else
 		do
 		putStrLn "Loading index"
-		idx <- getIndex
+		path <- indexFileName
+		idx <- checkedOpen path
 		repl idx cas inArch
 #endif
 	else do
-		idx <- getIndex
+		path <- indexFileName
+		idx <- checkedOpen path
 		doSearch idx cas inArch args

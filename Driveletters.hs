@@ -13,5 +13,5 @@ driveLetters = do
 	letters <- mapM (\letter -> liftM (\n -> (letter, n == 3)) (withTString letter getDriveType)) (map (:":\\") ['A'..'Z'])
 	return $ map fst $ filter snd letters
 #else
-driveLetters = undefined
+driveLetters = error ""
 #endif
