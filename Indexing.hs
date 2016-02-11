@@ -11,6 +11,7 @@ import Control.Monad.Loops
 import Control.Monad
 import Control.Parallel.Strategies
 import Control.Concurrent
+import Control.Arrow
 import Generics.Pointless.Functors
 import Data.Array.IArray hiding (index)
 import Data.Array (Array)
@@ -19,7 +20,8 @@ import Data.Int
 import Data.Word
 import Data.Bits
 import Data.Char
-import Data.List
+import Data.Maybe
+import Data.List hiding (nub)
 import Data.Typeable
 import Data.Function
 import Data.ByteString.Char8 (ByteString, unpack, hGet)
@@ -80,7 +82,7 @@ data IndexingError = PathTooLong -- a path was too long
 
 instance Exception IndexingError
 
-data QueryOptions = QueryOptions { caseSensitive :: !Bool, inArchives :: !Bool }
+data QueryOptions = QueryOptions { caseSensitive :: !Bool, inArchives :: !Bool, wordsOnly :: !Bool }
 
 {-# NOINLINE buffer #-}
 buffer = unsafePerformIO (new 0)
@@ -128,6 +130,8 @@ index idx path contents = do
 	writeGraphAt p path M.empty
 	pathPtr <- peekPtr (toRepr p)
 
+	let contents' =  map toUpper $ takeWhile printable contents
+
 	-- Index the file
 	foldr (\(i, window) next -> when (interesting window) $ do
 		-- Index the word sequence
@@ -147,7 +151,8 @@ index idx path contents = do
 			pokePtr (toRepr p2) p3
 		next)
 		(return ())
-		(zip [0,5..] (windows 10 5 $ map toUpper $ takeWhile printable contents))
+		(zip [0,5..] (windows 10 5 contents'))
+		-- ++ map ((+1) *** take 10 . tail) (filter (\(_, x:_) -> x `elem` " \t\r\n") $ zip [0..] $ init $ tails contents'))
 
 getFile' options path = if inArchives options || '@' `notElem` path then
 		liftM Just $ getFile path
@@ -158,12 +163,31 @@ bigZip ls = if any null ls then [] else map head ls : bigZip (map tail ls)
 
 prnt x = unsafePerformIO (putStrLn x) `seq` x
 
+data Key t u = Key t u
+
+unKey (Key x y) = (x, y)
+
+instance (Eq t) => Eq (Key t u) where
+	(==) = (==) `on` \(Key x _) -> x
+
+instance (Ord t) => Ord (Key t u) where
+	compare = compare `on` \(Key x _) -> x
+
+nub ls = catMaybes $ map snd $ scanl (\(st, _) x -> if M.member x st then
+		(st, Nothing)
+	else
+		(M.insert x () st, Just x))
+	(M.empty, Nothing)
+	ls
+
+swap (x, y) = (y, x)
+
 lookUp :: Index -> QueryOptions -> String -> IO [(FilePath, (FilePath, Int))]
 lookUp idx options string = do
 	let string1 = (if caseSensitive options then id else map toUpper) string
 	let wns = concatMap (\(i, s) -> map ((,) i) $ compatiblePlaces $ take 10 $ pad '\0' 10 s) $ zip [0..4] $ tails $ map toUpper string
-	lazyMapM
-		(nubBy ((==) `on` fst) . concat)
+	locations <- lazyMapM
+		((`using` evalList rseq) . map (swap . unKey) . nub . map (uncurry Key . swap) . concat)
 		(\(j, hash) -> do
 			let n1 = fromIntegral hash .&. 255
 			let n2 = fromIntegral hash `shiftR` 8
@@ -174,24 +198,26 @@ lookUp idx options string = do
 				else do
 				p2 <- elementAt p n2
 				(res, _) <- readGraphAt p2
-
-				lazyMapM
-					concat
-					(\(i, path) -> do
-					path' <- getFile' options path
-					maybe
-						(return [])
-						(\path' -> do
-						inxd <- openBinaryFile path' ReadMode
-						finally (do
-							hSeek inxd AbsoluteSeek $ toInteger $ 0 `max` (i - j)
-							s <- hGet inxd (length string1)
-							return $ if string1 == (if caseSensitive options then id else map toUpper) (unpack s) then
-									[(path, (path', i))]
-								else
-									[])
-							(hClose inxd))
-						path')
-					(lToList res))
+				return (lToList res))
 		wns
-
+	lazyMapM
+		((`using` evalList rseq) . map unKey . nub . map (uncurry Key) . concat)
+		(\(i, path) -> do
+		path' <- getFile' options path
+		maybe
+			(return [])
+			(\path' -> do
+			catch
+				(do
+				inxd <- openBinaryFile path' ReadMode
+				finally (do
+					hSeek inxd AbsoluteSeek $ toInteger $ 0 `max` i
+					s <- hGet inxd (length string1)
+					return $ if string1 == (if caseSensitive options then id else map toUpper) (unpack s) then
+							[(path, (path', i))]
+						else
+							[])
+					(hClose inxd))
+				(\(ex :: IOError) -> putStr "*** " >> print ex >> return []))
+			path')
+		locations

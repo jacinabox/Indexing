@@ -22,12 +22,12 @@ import IndexDirector
 import Indexing (openIndex, Index, QueryOptions(..))
 import Unpacks
 import Split
+import File.Mapped
+import File.Graph
 #ifdef WIN32
 import Subclass
 import Graphics.Win32
 import System.Win32.DLL
-import File.Mapped
-import File.Graph
 
 foreign import stdcall "windows.h GetWindowTextW" c_GetWindowText :: HWND -> LPTSTR -> Int32 -> IO LRESULT
 
@@ -230,7 +230,7 @@ wndProc idxRef resultsRef settingsRef scrollRef historyRef wnd msg wParam lParam
 				insertString txt s
 				modifyIORef' historyRef (s:)
 				idx <- readIORef idxRef
-				res <- lookKeywords idx keywords (QueryOptions (res /= 0) True)
+				res <- lookKeywords idx keywords (QueryOptions (res /= 0) True False)
 				writeIORef resultsRef (res, fromIntegral $ length keywords)
 		sortResults settingsRef resultsRef
 		writeIORef scrollRef 0
@@ -365,9 +365,9 @@ winMain = do
 
 help = putStrLn "Index: usage\nindex -i path, indexes a path\nindex -i, does a full index\nindex keywords [-c -a], does a search (case sensitive, in archives)"
 
-doSearch idx cas inArch args = do
+doSearch idx cas inArch words args = do
 	let keywords = filter ((>=5) . length) args
-	results <- lookKeywords idx keywords (QueryOptions cas inArch)
+	results <- lookKeywords idx keywords (QueryOptions cas inArch words)
 	mapM_ (\(nm, contexts) -> do
 			putStrLn ""
 			putStrLn ("  " ++ nm)
@@ -375,24 +375,26 @@ doSearch idx cas inArch args = do
 		results
 	when (null results) (putStrLn "Index: no results found")
 
-repl idx cas inArch = do
+repl idx cas inArch wrds = do
 	putStr ">"
 	hFlush stdout
 	query <- getLine
 	unless (null query) $ do
-		doSearch idx cas inArch (words query)
-		repl idx cas inArch
+		doSearch idx cas inArch wrds (words query)
+		repl idx cas inArch wrds
 
 main = do
 	args <- getArgs
 	let cas = "-c" `elem` args
 	let inArch = "-a" `elem` args
+	let words = "-w" `elem` args
+	let noRec = "-n" `elem` args
 	if not (null args) && head args == "-i" then
 		if length args == 1 then
 			fullIndex
 		else do
 			dir <- canonicalizePath (args !! 1)
-			indexWrapper (appendDelimiter dir)
+			indexWrapper noRec (appendDelimiter dir)
 	else if "--help" `elem` args then
 		help
 	else if null args then
@@ -403,9 +405,9 @@ main = do
 		putStrLn "Loading index"
 		path <- indexFileName
 		idx <- checkedOpen path
-		repl idx cas inArch
+		repl idx cas inArch words
 #endif
 	else do
 		path <- indexFileName
 		idx <- checkedOpen path
-		doSearch idx cas inArch args
+		doSearch idx cas inArch words args

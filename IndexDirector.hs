@@ -8,10 +8,12 @@ import System.Directory
 import System.IO
 import Data.Char
 import Data.Function
+import Data.List
 import System.Environment
 import Data.IORef
 import System.FilePath
 import Control.Exception
+import Control.Arrow
 import Data.Maybe
 import System.IO.Error
 import Data.ByteString.Char8 (unpack, hGet)
@@ -40,7 +42,7 @@ details1 name logicalName idx code = putStrLn logicalName >> maybe
 	code
 	(\f -> try (f name) >>= either
 		(\(ex :: IOError) -> putStr "*** " >> print ex)
-		(\unpacked -> indexDirectory unpacked (logicalName ++ "@") idx))
+		(\unpacked -> indexDirectory False unpacked (logicalName ++ "@") idx))
 	(lookup (takeExtension name) unpacks)
 
 details2 name code = do
@@ -56,7 +58,7 @@ details3 code = catch (catch code
 
 -- When a file is an unpackable archive, I do the unpacking, then start
 -- indexing the resulting temporary directory.
-indexDirectory dir logicalDir idx = details3 $ do
+indexDirectory noRecurse dir logicalDir idx = details3 $ do
 	contents <- getDirectoryContents dir
 	mapM_ (\nm -> let
 			name = dir ++ nm
@@ -70,7 +72,7 @@ indexDirectory dir logicalDir idx = details3 $ do
 			contents <- hGetContents hdl
 			catch (index idx logicalName contents) (\(ex :: IndexingError) -> putStr "*** " >> print ex))
 			else
-				details2 name {-Primary control flow:-}(indexDirectory (name ++ [pathDelimiter]) (logicalName ++ [pathDelimiter]) idx))
+				unless noRecurse (details2 name {-Primary control flow:-}(indexDirectory noRecurse (name ++ [pathDelimiter]) (logicalName ++ [pathDelimiter]) idx)))
 		contents
 
 indexDatabase ident idx = error ""{-do
@@ -83,19 +85,19 @@ indexDatabase ident idx = error ""{-do
 			recs)
 		tables-}
 
-indexWrapper dir = do
+indexWrapper noRec dir = do
 	idxNm <- indexFileName
 	idx <- openIndex idxNm
 	finally
-		(indexDirectory dir dir idx)
+		(indexDirectory noRec dir dir idx)
 		(closeIndex idx)
 
 #ifdef WIN32
 fullIndex = do
 	letters <- driveLetters
-	mapM_ indexWrapper letters
+	mapM_ (indexWrapper False) letters
 #else
-fullIndex = indexWrapper "/"
+fullIndex = indexWrapper False "/"
 #endif
 
 intersection ((x, y):xs) ls = if null with then
@@ -125,6 +127,7 @@ contexts keywords (name, locs) = liftM ((,) name) $ mapM (\(k, (unpackName, loc)
 	sz <- hFileSize hdl
 	hSeek hdl AbsoluteSeek $ toInteger $ (loc - 33) `max` 0
 	bs <- hGet hdl $ 67 `min` (fromInteger sz - (fromIntegral loc - 33))
+	hClose hdl
 	return $ "..." ++ replace [("\n", " "), ("\t", " "), ("\r", " ")] (unpack bs ++ "..."))
 	$ zip keywords locs
 
