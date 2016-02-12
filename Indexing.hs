@@ -187,7 +187,7 @@ lookUp idx options string = do
 	let string1 = (if caseSensitive options then id else map toUpper) string
 	let wns = concatMap (\(i, s) -> map ((,) i) $ compatiblePlaces $ take 10 $ pad '\0' 10 s) $ zip [0..4] $ tails $ map toUpper string
 	locations <- lazyMapM
-		((`using` evalList rseq) . map (swap . unKey) . nub . map (uncurry Key . swap) . concat)
+		((`using` evalList rseq) . nub . concat)
 		(\(j, hash) -> do
 			let n1 = fromIntegral hash .&. 255
 			let n2 = fromIntegral hash `shiftR` 8
