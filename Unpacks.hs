@@ -24,10 +24,14 @@ import Split
 pathDelimiter = '\\'
 
 nullDevice = "NUL"
+
+deleteCommand = ("del",["/S","/Q"])
 #else
 pathDelimiter = '/'
 
 nullDevice = "/dev/null"
+
+deleteCommand = ("rm",["-rf"])
 #endif
 
 appendDelimiter s
@@ -124,7 +128,7 @@ convertRtf = eraseTags . convertRtf0 0 . tail . init
 
 getUnpackDir n = do
 	tmp <- getTemporaryDirectory
-	let path = tmp ++ show n ++ [pathDelimiter]
+	let path = appendDelimiter tmp ++ show n ++ [pathDelimiter]
 	catch
 		(do
 			createDirectory path
@@ -145,7 +149,7 @@ unpack cmd switches name = do
 	setCurrentDirectory path
 	readProcess cmd (switches ++ [takeFileName name]) ""
 	setCurrentDirectory curdir
-	catch (removeFile path2) (\(_ :: IOError) -> return ())
+	catch (readProcess (fst deleteCommand) (snd deleteCommand ++ [path2]) "") (\(ex :: IOError) -> putStrLn ("*** " ++ show ex) >> return "")
 	return path
 
 getFile logicalPath = foldM (\physical next -> maybe (return physical) (liftM (++ next) . ($ physical)) (lookup (takeExtension physical) unpacks)) x xs where

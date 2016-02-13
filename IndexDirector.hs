@@ -30,7 +30,7 @@ toUpperCase s = map toUpper s
 indexFileName = do
 	dir <- getAppUserDataDirectory "Indexing"
 	createDirectoryIfMissing False dir
-	return (dir ++ pathDelimiter : "Index.dat")
+	return (appendDelimiter dir ++ "Index.dat")
 
 -- I maintain a distinction between "names" and "logical names," in order
 -- to handle files that have been unpacked from archives. The logical names
@@ -64,13 +64,14 @@ indexDirectory noRecurse dir logicalDir idx = details3 $ do
 			name = dir ++ nm
 			logicalName = logicalDir ++ nm in
 		unless (nm == "." || nm == "..") $ do
+		index idx logicalName logicalName True
 		b <- doesFileExist name
 		if b then
 				details1 name logicalName idx {-Primary control flow:-}(bracket (openBinaryFile name ReadMode)
 			hClose
 			$ \hdl -> do
 			contents <- hGetContents hdl
-			catch (index idx logicalName contents) (\(ex :: IndexingError) -> putStr "*** " >> print ex))
+			catch (index idx logicalName contents False) (\(ex :: IndexingError) -> putStr "*** " >> print ex))
 			else
 				unless noRecurse (details2 name {-Primary control flow:-}(indexDirectory noRecurse (name ++ [pathDelimiter]) (logicalName ++ [pathDelimiter]) idx)))
 		contents
@@ -122,14 +123,15 @@ lookKeywords idx keywords options = do
 	mapM (contexts keywords) results
 
 -- This function produces the contexts for a search.
-contexts keywords (name, locs) = liftM ((,) name) $ mapM (\(k, (unpackName, loc)) -> do
+contexts keywords (name, locs) = catch (liftM ((,) name) $ mapM (\(k, (unpackName, loc)) -> do
 	hdl <- openBinaryFile unpackName ReadMode
 	sz <- hFileSize hdl
 	hSeek hdl AbsoluteSeek $ toInteger $ (loc - 33) `max` 0
 	bs <- hGet hdl $ 67 `min` (fromInteger sz - (fromIntegral loc - 33))
 	hClose hdl
 	return $ "..." ++ replace [("\n", " "), ("\t", " "), ("\r", " ")] (unpack bs ++ "..."))
-	$ zip keywords locs
+	$ zip keywords locs)
+	(\(_ :: IOError) -> return (name, []))
 
 parseKeywords (c:cs)
 	| c == '"'	= let (kw, rest) = break (=='"') cs in

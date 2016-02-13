@@ -120,8 +120,8 @@ type IndexRepr = [[L (Int, FilePath)]]
 
 type Index = FilePtr IndexRepr
 
-index :: Index -> FilePath -> String -> IO ()
-index idx path contents = do
+index :: Index -> FilePath -> String -> Bool -> IO ()
+index idx path contents b = do
 	-- Check path length
 	when (length path > 128) $ throwIO PathTooLong
 
@@ -145,7 +145,7 @@ index idx path contents = do
 		(fls, _) <- readGraphAt p2
 		unless ((i, path) `elem` lToList fls) $ do -- Save the path
 			ptr <- peekPtr (toRepr p2)
-			let x = Right ((fromIntegral i, toRepr pathPtr), ptr)
+			let x = Right ((if b then 0 else fromIntegral i, toRepr pathPtr), ptr)
 			p3 <- malloc (fileSrc idx) (size (Left () :: Either () ((Int, FilePath), L (Int, FilePath))))
 			fpoke p3 x
 			pokePtr (toRepr p2) p3
@@ -203,6 +203,7 @@ lookUp idx options string = do
 	lazyMapM
 		((`using` evalList rseq) . map unKey . nub . map (uncurry Key) . concat)
 		(\(i, path) -> do
+		let path1 = (if caseSensitive options then id else map toUpper) path
 		path' <- getFile' options path
 		maybe
 			(return [])
@@ -210,7 +211,9 @@ lookUp idx options string = do
 			catch
 				(do
 				inxd <- openBinaryFile path' ReadMode
-				finally (do
+				liftM
+					((if i == 0 && isInfixOf string1 path1 then [(path, (path', 0))] else []) ++)
+					$ finally (do
 					hSeek inxd AbsoluteSeek $ toInteger $ 0 `max` i
 					s <- hGet inxd (length string1)
 					return $ if string1 == (if caseSensitive options then id else map toUpper) (unpack s) then
