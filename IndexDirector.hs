@@ -40,9 +40,9 @@ indexFileName = do
 
 details1 name logicalName idx code = putStrLn logicalName >> maybe
 	code
-	(\f -> try (f name) >>= either
-		(\(ex :: IOError) -> putStr "*** " >> print ex)
-		(\unpacked -> indexDirectory False unpacked (logicalName ++ "@") idx))
+	(\f -> catch
+		(f name $ \unpacked -> indexDirectory False unpacked (logicalName ++ "@") idx)
+		(\(ex :: IOError) -> putStr "*** " >> print ex))
 	(lookup (takeExtension name) unpacks)
 
 details2 name code = do

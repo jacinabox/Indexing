@@ -3,8 +3,8 @@
 -- | Monotone hash based index.
 module Indexing (pad, openIndex, closeIndex, IndexRepr, Index, IndexingError(..), QueryOptions(..), index, lookUp) where
 
-import System.Random
-import Control.Monad.Random
+import System.Random hiding (split)
+import Control.Monad.Random hiding (split)
 import System.IO
 import Control.Exception
 import Control.Monad.Loops
@@ -36,6 +36,7 @@ import File.Mapped
 import File.Graph
 import LazySequence
 import Unpacks
+import Split
 
 openIndex :: FilePath -> IO Index
 openIndex path = do
@@ -154,10 +155,10 @@ index idx path contents b = do
 		(zip [0,5..] (windows 10 5 contents'))
 		-- ++ map ((+1) *** take 10 . tail) (filter (\(_, x:_) -> x `elem` " \t\r\n") $ zip [0..] $ init $ tails contents'))
 
-getFile' options path = if inArchives options || '@' `notElem` path then
-		liftM Just $ getFile path
+getFile' options path code = if inArchives options || '@' `notElem` path then
+		getFile (split '@' path) code
 	else
-		return Nothing
+		return []
 
 bigZip ls = if any null ls then [] else map head ls : bigZip (map tail ls)
 
@@ -204,10 +205,7 @@ lookUp idx options string = do
 		((`using` evalList rseq) . map unKey . nub . map (uncurry Key) . concat)
 		(\(i, path) -> do
 		let path1 = (if caseSensitive options then id else map toUpper) path
-		path' <- getFile' options path
-		maybe
-			(return [])
-			(\path' -> do
+		getFile' options path $ \path' ->
 			catch
 				(do
 				inxd <- openBinaryFile path' ReadMode
@@ -222,5 +220,4 @@ lookUp idx options string = do
 							[])
 					(hClose inxd))
 				(\(ex :: IOError) -> putStr "*** " >> print ex >> return []))
-			path')
 		locations
