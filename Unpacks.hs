@@ -123,8 +123,7 @@ eraseTags [] = []
 convertRtf = eraseTags . convertRtf0 0 . tail . init
 
 getUnpackDir n = do
-	tmp <- getTemporaryDirectory
-	let path = tmp ++ show n ++ [pathDelimiter]
+	let path = "/mnt/export/temporary/" ++ show n ++ [pathDelimiter]
 	catch
 		(do
 			createDirectory path
@@ -138,6 +137,7 @@ convertFile f name = do
 	return path
 
 unpack cmd switches name = do
+	putStrLn ("Unpacking with " ++ cmd ++ " " ++ intercalate " " switches)
 	path <- getUnpackDir 0
 	let path2 = path ++ takeFileName name
 	copyFile name path2
@@ -145,7 +145,7 @@ unpack cmd switches name = do
 	setCurrentDirectory path
 	readProcess cmd (switches ++ [takeFileName name]) ""
 	setCurrentDirectory curdir
-	catch (removeFile path2) (\(_ :: IOError) -> return ())
+	catch (readProcess "rm" ["-rf",path2] "") (\(_ :: IOError) -> return "")
 	return path
 
 getFile logicalPath = foldM (\physical next -> maybe (return physical) (liftM (++ next) . ($ physical)) (lookup (takeExtension physical) unpacks)) x xs where

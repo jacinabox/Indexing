@@ -1,4 +1,4 @@
-{-# LANGUAGE DeriveDataTypeable, ScopedTypeVariables, TypeOperators, CPP #-}
+{-# LANGUAGE DeriveDataTypeable, ScopedTypeVariables, TypeOperators, CPP, FlexibleContexts, StandaloneDeriving, PolyKinds #-}
 
 -- | Monotone hash based index.
 module Indexing (pad, openIndex, closeIndex, IndexRepr, Index, IndexingError(..), QueryOptions(..), index, lookUp) where
@@ -110,13 +110,7 @@ unpackInt i = [shiftR i 24, shiftR i 16 .&. 255, shiftR i 8 .&. 255, i .&. 255]
 
 type L t = Fix (Const () :+: (Const t :*: Id))
 
-lToList :: L t -> [t]
-lToList (Inn ei) = either
-	(const [])
-	(\(x, xs) -> x : lToList xs)
-	ei
-
-type IndexRepr = [[L (Int, FilePath)]]
+type IndexRepr = [[{-L-}[(Int, FilePath)]]]
 
 type Index = FilePtr IndexRepr
 
@@ -126,9 +120,9 @@ index idx path contents = do
 	when (length path > 128) $ throwIO PathTooLong
 
 	-- Add the path to the path array
-	p <- malloc (fileSrc idx) (size path)
-	writeGraphAt p path M.empty
-	pathPtr <- peekPtr (toRepr p)
+	-- p <- malloc (fileSrc idx) (size path)
+	-- writeGraphAt p path M.empty
+	-- pathPtr <- peekPtr (toRepr p)
 
 	let contents' =  map toUpper $ takeWhile printable contents
 
@@ -140,15 +134,11 @@ index idx path contents = do
 		let n2 = n `shiftR` 8
 		p <- elementAt idx (fromIntegral n1)
 		sz <- peekPtr (toRepr p) >>= fpeek . ffirst
-		when (sz == 0) $ writeGraphAt p (replicate 256 (Inn (Left ()))) M.empty
+		when (sz == 0) $ writeGraphAt p (replicate 256 []) M.empty
 		p2 <- elementAt p (fromIntegral n2)
 		(fls, _) <- readGraphAt p2
-		unless ((i, path) `elem` lToList fls) $ do -- Save the path
-			ptr <- peekPtr (toRepr p2)
-			let x = Right ((fromIntegral i, toRepr pathPtr), ptr)
-			p3 <- malloc (fileSrc idx) (size (Left () :: Either () ((Int, FilePath), L (Int, FilePath))))
-			fpoke p3 x
-			pokePtr (toRepr p2) p3
+		unless ((i, path) `elem` fls) $ do -- Save the path
+			writeGraphAt p2 ((fromIntegral i, path) : fls) M.empty
 		next)
 		(return ())
 		(zip [0,5..] (windows 10 5 contents'))
@@ -187,18 +177,18 @@ lookUp idx options string = do
 	let string1 = (if caseSensitive options then id else map toUpper) string
 	let wns = concatMap (\(i, s) -> map ((,) i) $ compatiblePlaces $ take 10 $ pad '\0' 10 s) $ zip [0..4] $ tails $ map toUpper string
 	locations <- lazyMapM
-		((`using` evalList rseq) . map (swap . unKey) . nub . map (uncurry Key . swap) . concat)
+		((`using` evalList rseq) . nub . concat)
 		(\(j, hash) -> do
 			let n1 = fromIntegral hash .&. 255
 			let n2 = fromIntegral hash `shiftR` 8
 			p <- elementAt idx n1
 			sz <- peekPtr (toRepr p) >>= fpeek . ffirst
 			if sz == 0 then
-				return []
+					return []
 				else do
-				p2 <- elementAt p n2
-				(res, _) <- readGraphAt p2
-				return (lToList res))
+					p2 <- elementAt p n2
+					(res, _) <- readGraphAt p2
+					return res)
 		wns
 	lazyMapM
 		((`using` evalList rseq) . map unKey . nub . map (uncurry Key) . concat)

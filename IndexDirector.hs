@@ -27,10 +27,10 @@ import Indexing
 
 toUpperCase s = map toUpper s
 
-indexFileName = do
+indexFileName = return "/mnt/export/temporary/Index.dat"{-do
 	dir <- getAppUserDataDirectory "Indexing"
 	createDirectoryIfMissing False dir
-	return (dir ++ pathDelimiter : "Index.dat")
+	return (dir ++ pathDelimiter : "Index.dat")-}
 
 -- I maintain a distinction between "names" and "logical names," in order
 -- to handle files that have been unpacked from archives. The logical names
