@@ -363,7 +363,7 @@ winMain = do
 		loop
 #endif
 
-help = putStrLn "Index: usage\nindex -i path, indexes a path\nindex -i, does a full index\nindex keywords [-c -a], does a search (case sensitive, in archives)"
+help = putStrLn "Index: usage\nindex -i path, indexes a path\nindex -i -n path, do not index recursively\nindex -i, does a full index\nindex keywords [-c -a], does a search (case sensitive, in archives)"
 
 doSearch idx cas inArch words args = do
 	let keywords = filter ((>=5) . length) args

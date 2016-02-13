@@ -3,8 +3,8 @@
 -- | Monotone hash based index.
 module Indexing (pad, openIndex, closeIndex, IndexRepr, Index, IndexingError(..), QueryOptions(..), index, lookUp) where
 
-import System.Random
-import Control.Monad.Random
+import System.Random hiding (split)
+import Control.Monad.Random hiding (split)
 import System.IO
 import Control.Exception
 import Control.Monad.Loops
@@ -36,6 +36,7 @@ import File.Mapped
 import File.Graph
 import LazySequence
 import Unpacks
+import Split
 
 openIndex :: FilePath -> IO Index
 openIndex path = do
@@ -114,8 +115,8 @@ type IndexRepr = [[{-L-}[(Int, FilePath)]]]
 
 type Index = FilePtr IndexRepr
 
-index :: Index -> FilePath -> String -> IO ()
-index idx path contents = do
+index :: Index -> FilePath -> String -> Bool -> IO ()
+index idx path contents b = do
 	-- Check path length
 	when (length path > 128) $ throwIO PathTooLong
 
@@ -139,15 +140,21 @@ index idx path contents = do
 		(fls, _) <- readGraphAt p2
 		unless ((i, path) `elem` fls) $ do -- Save the path
 			writeGraphAt p2 ((fromIntegral i, path) : fls) M.empty
+		{-unless ((i, path) `elem` lToList fls) $ do -- Save the path
+			ptr <- peekPtr (toRepr p2)
+			let x = Right ((if b then 0 else fromIntegral i, toRepr pathPtr), ptr)
+			p3 <- malloc (fileSrc idx) (size (Left () :: Either () ((Int, FilePath), L (Int, FilePath))))
+			fpoke p3 x
+			pokePtr (toRepr p2) p3-}
 		next)
 		(return ())
 		(zip [0,5..] (windows 10 5 contents'))
 		-- ++ map ((+1) *** take 10 . tail) (filter (\(_, x:_) -> x `elem` " \t\r\n") $ zip [0..] $ init $ tails contents'))
 
-getFile' options path = if inArchives options || '@' `notElem` path then
-		liftM Just $ getFile path
+getFile' options path code = if inArchives options || '@' `notElem` path then
+		getFile (split '@' path) code
 	else
-		return Nothing
+		return []
 
 bigZip ls = if any null ls then [] else map head ls : bigZip (map tail ls)
 
@@ -193,14 +200,14 @@ lookUp idx options string = do
 	lazyMapM
 		((`using` evalList rseq) . map unKey . nub . map (uncurry Key) . concat)
 		(\(i, path) -> do
-		path' <- getFile' options path
-		maybe
-			(return [])
-			(\path' -> do
+		let path1 = (if caseSensitive options then id else map toUpper) path
+		getFile' options path $ \path' ->
 			catch
 				(do
 				inxd <- openBinaryFile path' ReadMode
-				finally (do
+				liftM
+					((if i == 0 && isInfixOf string1 path1 then [(path, (path', 0))] else []) ++)
+					$ finally (do
 					hSeek inxd AbsoluteSeek $ toInteger $ 0 `max` i
 					s <- hGet inxd (length string1)
 					return $ if string1 == (if caseSensitive options then id else map toUpper) (unpack s) then
@@ -209,5 +216,4 @@ lookUp idx options string = do
 							[])
 					(hClose inxd))
 				(\(ex :: IOError) -> putStr "*** " >> print ex >> return []))
-			path')
 		locations

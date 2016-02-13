@@ -18,16 +18,19 @@ import Control.Monad
 import Prelude hiding (catch)
 
 import Replace
-import Split
 
 #ifdef WIN32
 pathDelimiter = '\\'
 
 nullDevice = "NUL"
+
+deleteCommand = "del /S /Q"
 #else
 pathDelimiter = '/'
 
 nullDevice = "/dev/null"
+
+deleteCommand = "rm -rf"
 #endif
 
 appendDelimiter s
@@ -123,20 +126,24 @@ eraseTags [] = []
 convertRtf = eraseTags . convertRtf0 0 . tail . init
 
 getUnpackDir n = do
-	let path = "/mnt/export/temporary/" ++ show n ++ [pathDelimiter]
+	{-tmp <- getTemporaryDirectory
+	let path = appendDelimiter tmp ++ show n ++ [pathDelimiter]-}
+	path <- return "/mnt/export/temporary/"
 	catch
 		(do
 			createDirectory path
 			return path)
 		(\(_ :: IOError) -> getUnpackDir (n + 1))
 
-convertFile f name = do
+convertFile f name code = do
 	path <- getUnpackDir 0
 	txt <- readFile name
 	writeFile (path ++ "converted.dat") (f txt)
-	return path
+	finally
+		(code path)
+		(removeFile (path ++ "converted.dat"))
 
-unpack cmd switches name = do
+unpack cmd switches name code = do
 	putStrLn ("Unpacking with " ++ cmd ++ " " ++ intercalate " " switches)
 	path <- getUnpackDir 0
 	let path2 = path ++ takeFileName name
@@ -145,11 +152,15 @@ unpack cmd switches name = do
 	setCurrentDirectory path
 	readProcess cmd (switches ++ [takeFileName name]) ""
 	setCurrentDirectory curdir
-	catch (readProcess "rm" ["-rf",path2] "") (\(_ :: IOError) -> return "")
-	return path
+	finally
+		(code path)
+		(do
+		putStrLn ("Erasing temporary files in " ++ path)
+		callCommand (deleteCommand ++ " \"" ++ path ++ "\""))
 
-getFile logicalPath = foldM (\physical next -> maybe (return physical) (liftM (++ next) . ($ physical)) (lookup (takeExtension physical) unpacks)) x xs where
-	x:xs = split '@' logicalPath
+getFile :: [String] -> (String -> IO t) -> IO t
+getFile [] code = code ""
+getFile (path:paths) code = getFile paths $ \physical -> maybe (code physical) (($ code . (physical++))  . ($ physical)) (lookup (takeExtension physical) unpacks)
 
 type Identifier = String
 
